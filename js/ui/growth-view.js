@@ -114,6 +114,8 @@ function renderReview() {
   );
 }
 
+/** 版面：角色（遊戲化的第一個區塊）→ 每週回顧 → 其他遊戲化區塊（成就、商店、紀錄）。 */
 export function renderGrowth(panel) {
-  replaceChildren(panel, heading('growth', '成長'), extensions.map((fn) => fn()), renderReview());
+  const parts = extensions.flatMap((fn) => fn());
+  replaceChildren(panel, heading('growth', '成長'), parts.slice(0, 1), renderReview(), parts.slice(1));
 }

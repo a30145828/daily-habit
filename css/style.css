@@ -1664,3 +1664,200 @@ fieldset {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ===== 遊戲化 ===== */
+.notice--success {
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+}
+
+.character {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.avatar {
+  --progress: 0%;
+  flex-shrink: 0;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--primary) var(--progress), var(--surface-2) 0);
+}
+
+.avatar-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 2.4rem;
+}
+
+.avatar.level-up {
+  animation: level-up 1.2s ease-out 2;
+}
+
+@keyframes level-up {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  40% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 18px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar.level-up {
+    animation: none;
+  }
+}
+
+.character-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.character-info progress,
+.character progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--primary);
+}
+
+.character-level {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+
+.achievement-list,
+.reward-list,
+.ledger-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.achievement,
+.reward {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.achievement.is-unlocked {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.achievement p,
+.reward p {
+  margin: 0;
+}
+
+.achievement-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 40px;
+  text-align: center;
+}
+
+.achievement-name {
+  font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.reward {
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.reward-main {
+  flex: 1;
+  min-width: 140px;
+}
+
+.reward.is-archived {
+  background: var(--surface-2);
+}
+
+.ledger {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'kind delta'
+    'main main'
+    'action action';
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ledger-kind {
+  grid-area: kind;
+  justify-self: start;
+}
+
+.ledger-main {
+  grid-area: main;
+}
+
+.ledger-delta {
+  grid-area: delta;
+  justify-self: end;
+}
+
+.ledger-action {
+  grid-area: action;
+}
+
+.ledger-main p {
+  margin: 0;
+  word-break: break-word;
+}
+
+.ledger-delta {
+  margin: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger--revoke .badge,
+.ledger--redeem .badge {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.ledger--award .badge,
+.ledger--achievement .badge,
+.ledger--refund .badge {
+  color: var(--primary);
+  border-color: currentColor;
+}
+
+.pref-row {
+  margin-top: 12px;
+}

@@ -52,7 +52,8 @@ export function renderToday(panel) {
   if (!hasUserData(app.data)) return renderWelcome(panel);
 
   const overdue = sortTasks(overdueTasks(app.data, app.todayKey));
-  const dueToday = sortTasks(dueTodayTasks(app.data, app.todayKey));
+  const dueToday = sortTasks(dueTodayTasks(app.data, app.todayKey, { includeDone: true }));
+  const openToday = dueToday.filter((task) => !task.done).length;
   const due = habitsDueOn(app.data.habits, app.todayKey);
   const doneCount = due.filter((habit) => isCheckedIn(app.data.checkins, habit.id, app.todayKey)).length;
   const restDone = activeHabits(app.data.habits).filter(
@@ -66,7 +67,7 @@ export function renderToday(panel) {
       'ul',
       { class: 'summary', 'aria-label': '今日摘要' },
       summaryItem('已逾期', `${overdue.length} 項`, { tone: overdue.length ? 'alert' : '' }),
-      summaryItem('今天到期', `${dueToday.length} 項`),
+      summaryItem('今天到期', `${openToday} 項`),
       summaryItem('今日習慣', `${doneCount} / ${due.length}`),
       extensions.map((ext) => ext.summary?.()).filter(Boolean),
     ),
@@ -79,7 +80,7 @@ export function renderToday(panel) {
       h(
         'div',
         { class: 'section-head' },
-        h('h3', { id: 'today-due', class: 'section-title' }, `今天到期（${dueToday.length}）`),
+        h('h3', { id: 'today-due', class: 'section-title' }, `今天到期（${openToday} 項未完成${dueToday.length > openToday ? `，${dueToday.length - openToday} 項已完成` : ''}）`),
         button('＋ 新增今天的任務', () => openTaskDialog({ defaultDue: app.todayKey }), { variant: 'primary', size: 'small', focusKey: 'today-add-task' }),
       ),
       dueToday.length

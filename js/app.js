@@ -18,6 +18,7 @@ import {
   showToast,
 } from './ui/core.js';
 import { renderFinance } from './ui/finance-view.js';
+import { installGame, settleRewards } from './ui/game-view.js';
 import { renderGrowth } from './ui/growth-view.js';
 import { renderHabits } from './ui/habits-view.js';
 import { renderRecovery, renderSettings } from './ui/settings-view.js';
@@ -30,6 +31,7 @@ registerView('tasks', renderTasks);
 registerView('habits', renderHabits);
 registerView('finance', renderFinance);
 installSubscriptionExtensions();
+installGame();
 registerView('growth', renderGrowth);
 registerView('settings', renderSettings);
 registerView('recovery', renderRecovery);
@@ -143,6 +145,7 @@ async function init() {
   for (const hook of startupHooks) await hook();
   $('boot-message')?.remove();
   render();
+  settleRewards();
 }
 
 init();

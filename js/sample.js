@@ -6,6 +6,7 @@ import { createHabit, setCheckin } from './habits.js';
 import { createId } from './ids.js';
 import { createSeries } from './recurrence.js';
 import { createTxn, setBudget } from './finance.js';
+import { createReward } from './game.js';
 import { createSubscription } from './subscriptions.js';
 import { createTask } from './tasks.js';
 
@@ -104,7 +105,9 @@ export function buildSampleData(todayKey, now = new Date()) {
     );
   const subscriptions = [subscription('（範例）影音串流', 390, 'month', 2), subscription('（範例）雲端空間年繳', 1490, 'year', 40)];
 
-  return { tasks, series, habits, checkins, transactions, budgets, subscriptions };
+  const rewards = [createReward({ name: '（範例）看一集喜歡的影集', cost: 50, icon: '📺' }, now), createReward({ name: '（範例）買一杯手搖飲', cost: 120, icon: '🧋' }, now)];
+
+  return { tasks, series, habits, checkins, transactions, budgets, subscriptions, rewards };
 }
 
 /** 把範例資料加入現有資料（不刪除原有內容；已有相同 id 的項目，例如同一分類的預算，保留原本的）。 */

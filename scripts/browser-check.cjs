@@ -1,7 +1,7 @@
 // 瀏覽器端到端檢查（選用）。需要已安裝 Playwright 與 Chromium。
 // 用法：先啟動本機伺服器，再執行
 //   BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs [截圖輸出資料夾] [群組…]
-// 群組：tasks habits review finance（不指定時全部執行）。
+// 群組：tasks habits review finance game（不指定時全部執行）。
 // 每個情境都使用全新的瀏覽器資料，並把時間固定在台灣 2026-10-20（二）10:00，不會動到你平常使用的資料。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -426,7 +426,7 @@ async function suiteReview(browser) {
   await page.getByRole('button', { name: '為「閱讀」完成今天的打卡' }).click();
   await t.go('growth');
   check(await vis(page.getByText('2026/10/19（一）至 10/25（日）')), '回顧顯示統計期間');
-  const summary = await page.locator('#view-growth .summary').innerText();
+  const summary = await page.getByRole('list', { name: '本週統計' }).innerText();
   check(summary.includes('1 項') && summary.includes('100%') && summary.includes('1 / 1'), `回顧統計：${summary.replace(/\n/g, ' ')}`);
   check(await vis(page.getByText('統計期間與計算方式')), '顯示計算方式說明');
   await page.fill('#review-note', '這週開始固定閱讀。');
@@ -700,11 +700,132 @@ async function suiteCsv(browser) {
   await t.ctx.close();
 }
 
+// ===================== 遊戲化 =====================
+
+async function suiteGame(browser) {
+  const t = await open(browser, { hash: '#tasks' });
+  const { page } = t;
+  const coins = async () => (await t.read()).ledger.reduce((sum, e) => sum + e.coins, 0);
+  const xp = async () => (await t.read()).ledger.reduce((sum, e) => sum + e.xp, 0);
+
+  await addTask(t, { title: '重要報告', due: '2026-10-20', priority: '高' });
+  await page.getByRole('checkbox', { name: '重要報告' }).click();
+  await page.waitForTimeout(100);
+  check(await vis(page.locator('#toast', { hasText: '+50 經驗值、+16 金幣' })), '完成任務時提示獲得的經驗值與金幣（含首次完成成就）');
+  let d = await t.read();
+  check(d.ledger.length === 2 && (await xp()) === 50 && (await coins()) === 16, '帳本：任務獎勵 30/6 + 成就「踏出第一步」20/10');
+
+  // 反覆取消與完成
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('checkbox', { name: '重要報告' }).click();
+    await page.waitForTimeout(80);
+    await page.getByRole('checkbox', { name: '重要報告' }).click();
+    await page.waitForTimeout(80);
+  }
+  check((await xp()) === 50 && (await coins()) === 16, '反覆取消、重新完成不會多領');
+  d = await t.read();
+  check(d.ledger.filter((e) => e.kind === 'achievement').length === 1, '成就不會重複領取');
+  check(new Set(d.ledger.map((e) => e.id)).size === d.ledger.length, '帳本 id 不重複');
+
+  // 習慣：打卡與補登相同規則
+  await t.go('habits');
+  await page.getByRole('button', { name: '＋ 新增習慣' }).click();
+  await page.fill('#habit-name', '冥想');
+  await t.save();
+  await page.getByRole('button', { name: '為「冥想」完成今天的打卡' }).click();
+  await page.waitForTimeout(100);
+  check((await coins()) === 16 + 3 + 10, '打卡 +3 金幣，加上首次打卡成就 +10');
+  await page.waitForTimeout(500);
+  await page.getByRole('button', { name: '取消「冥想」今天的打卡' }).click();
+  await page.waitForTimeout(100);
+  check((await coins()) === 16 + 10, '取消打卡撤銷打卡獎勵（成就保留）');
+
+  // 成長頁：角色、成就、商店
+  await t.go('growth');
+  check(await vis(page.locator('.character-level', { hasText: 'Lv.1' })), '顯示等級');
+  check(await vis(page.getByText(/再 \d+ 點升到 Lv.2/)), '顯示升級進度');
+  check((await page.locator('.achievement.is-unlocked').count()) === 2, '已解鎖兩個成就');
+  await page.getByRole('button', { name: '＋ 新增獎勵' }).click();
+  await page.fill('#reward-name', '看電影');
+  await page.fill('#reward-cost', '20');
+  await t.save();
+  await page.getByRole('button', { name: '＋ 新增獎勵' }).click();
+  await page.fill('#reward-name', '新耳機');
+  await page.fill('#reward-cost', '500');
+  await t.save();
+  check(await page.getByRole('button', { name: /兌換「新耳機」（金幣不足）/ }).isDisabled(), '金幣不足時不能兌換');
+  await page.getByRole('button', { name: /兌換「看電影」/ }).click();
+  await t.confirmOk();
+  await page.waitForTimeout(100);
+  check((await coins()) === 6, '兌換後扣除金幣（26 - 20）');
+  check(await vis(page.locator('.ledger--redeem')), '獎勵紀錄顯示兌換');
+
+  // 撤銷造成負數：取消完成高優先任務（-6）
+  await t.go('tasks');
+  await setView(t, '已完成');
+  await page.getByRole('checkbox', { name: '重要報告' }).click();
+  await page.waitForTimeout(100);
+  check((await coins()) === 0, '撤銷任務獎勵後餘額 0');
+  await t.go('growth');
+  await page.getByRole('button', { name: /退回兌換/ }).click();
+  await t.confirmOk();
+  await page.waitForTimeout(100);
+  check((await coins()) === 20, '退回兌換歸還金幣');
+  check((await page.getByRole('button', { name: /退回兌換/ }).count()) === 0 && (await vis(page.getByText('已退回'))), '每筆兌換只能退回一次');
+  check((await page.locator('.ledger--revoke').count()) >= 1, '獎勵紀錄保留撤銷紀錄');
+  await t.shot('growth-game');
+
+  // 關閉遊戲化
+  await t.go('settings');
+  await page.getByLabel(/開啟遊戲化/).uncheck();
+  await t.go('growth');
+  check(await vis(page.getByRole('heading', { name: '遊戲化已關閉' })) && (await page.locator('.character').count()) === 0, '關閉後成長頁隱藏角色，只保留回顧');
+  await t.go('today');
+  check(!(await page.locator('.summary').innerText()).includes('Lv.'), '今日摘要不再顯示等級');
+  const before = (await t.read()).ledger.length;
+  await t.go('tasks');
+  await setView(t, '全部');
+  await page.getByRole('checkbox', { name: '重要報告' }).click();
+  await page.waitForTimeout(100);
+  check((await t.read()).ledger.length === before, '關閉期間任務仍可完成，但不計算獎勵');
+  await t.go('growth');
+  await page.getByRole('button', { name: '開啟遊戲化' }).click();
+  await page.waitForTimeout(100);
+  check((await coins()) === 26 && (await xp()) === 70, '重新開啟後依目前完成狀態補齊（與一直開啟相同）');
+  check(t.errors.length === 0, `遊戲化操作無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+  await t.ctx.close();
+}
+
+async function suiteGameMigration(browser) {
+  // 第一版的資料升級後，過去完成的任務與打卡會補記獎勵
+  const t = await open(browser, { hash: '#growth' });
+  const { page } = t;
+  const v1 = {
+    version: 1,
+    savedAt: '2026-10-19T00:00:00.000Z',
+    todos: [{ id: 't_old1', title: '舊的完成任務', note: '', dueDate: null, priority: 'low', done: true, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z', completedAt: '2026-10-02T00:00:00.000Z' }],
+    habits: [{ id: 'h_old1', name: '舊習慣', createdDate: '2026-10-10', archived: false, archivedDate: null, createdAt: '2026-10-10T00:00:00.000Z', updatedAt: '2026-10-10T00:00:00.000Z' }],
+    checkins: [{ habitId: 'h_old1', date: '2026-10-18', createdAt: null }],
+  };
+  await page.evaluate((d) => localStorage.setItem('daily-habit:data', JSON.stringify(d)), v1);
+  await page.reload();
+  await page.waitForSelector('#view-growth h2');
+  await page.waitForTimeout(150);
+  const d = await t.read();
+  check(d.version === 2 && d.ledger.some((e) => e.source === 'task:t_old1') && d.ledger.some((e) => e.source.startsWith('checkin:')), '從第一版升級後補記歷史完成的獎勵');
+  await page.reload();
+  await page.waitForSelector('#view-growth h2');
+  check((await t.read()).ledger.length === d.ledger.length, '重新整理不會重複補記');
+  check(t.errors.length === 0, `升級補記無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+  await t.ctx.close();
+}
+
 const SUITES = {
   tasks: [suiteTasks, suiteRecurring, suiteMidnight],
   habits: [suiteHabits],
   review: [suiteReview],
   finance: [suiteFinance, suiteSubscriptions, suiteCsv],
+  game: [suiteGame, suiteGameMigration],
 };
 
 (async () => {

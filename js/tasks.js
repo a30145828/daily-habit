@@ -195,9 +195,9 @@ function activeSeries(data) {
   return data.series.filter((series) => !series.archived);
 }
 
-/** 今天到期的未完成任務（含今天的重複項目）。 */
-export function dueTodayTasks(data, todayKey) {
-  const real = visibleTasks(data.tasks).filter((task) => !task.done && task.dueDate === todayKey);
+/** 今天到期的未完成任務（含今天的重複項目）。includeDone 為 true 時也包含今天到期且已完成的。 */
+export function dueTodayTasks(data, todayKey, { includeDone = false } = {}) {
+  const real = visibleTasks(data.tasks).filter((task) => (includeDone || !task.done) && task.dueDate === todayKey);
   const virtual = activeSeries(data).flatMap((series) => virtualOccurrencesBetween(series, data.tasks, todayKey, todayKey));
   return [...real, ...virtual];
 }
@@ -246,7 +246,7 @@ export function archivedTasks(data) {
 /** 取得指定視圖的任務清單（已套用篩選與排序）。 */
 export function taskView(data, view, todayKey, { filters = {}, sort = 'due', weekStart = 1 } = {}) {
   const sources = {
-    today: () => dueTodayTasks(data, todayKey),
+    today: () => dueTodayTasks(data, todayKey, { includeDone: true }),
     overdue: () => overdueTasks(data, todayKey),
     week: () => thisWeekTasks(data, todayKey, weekStart),
     all: () => allTasks(data, todayKey),

@@ -23,6 +23,8 @@ export const app = {
   persist: () => ({ ok: true }),
   /** 儲存前依序套用的轉換（例如遊戲化獎勵結算）：(nextData, prevData) => nextData */
   transforms: [],
+  /** 儲存成功後執行：(prevData, nextData) => 要附加在提示訊息後的文字或 null */
+  afterCommit: [],
   /** 各區域的畫面狀態（篩選、目前月份等），不會儲存。 */
   ui: {},
   dialogReturnKey: null,
@@ -54,9 +56,12 @@ export function commit(nextData, message) {
     render();
     return false;
   }
+  const prev = app.data;
   app.data = data;
+  const extras = app.afterCommit.map((hook) => hook(prev, data)).filter(Boolean);
   render();
-  if (message) showToast(message);
+  const text = [message, ...extras].filter(Boolean).join(' ');
+  if (text) showToast(text);
   return true;
 }
 

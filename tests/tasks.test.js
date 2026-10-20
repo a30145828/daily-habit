@@ -138,3 +138,11 @@ test('重複任務出現在今日、本週，完成後不再重複出現', () =>
   assert.equal(counts.done, 1);
   assert.equal(counts.all, 2, '全部：已完成的這次 + 下一次（10/23）');
 });
+
+test('今日視圖包含今天已完成的任務（排在後面），數量只算未完成', () => {
+  const a = make('未完成', today);
+  const b = { ...make('已完成', today), done: true, completedAt: now.toISOString() };
+  const d = data([b, a]);
+  assert.deepEqual(taskView(d, 'today', today).map((t) => t.title), ['未完成', '已完成']);
+  assert.equal(viewCounts(d, today).today, 1);
+});
