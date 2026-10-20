@@ -1589,6 +1589,15 @@ fieldset {
   accent-color: var(--primary);
 }
 
+.storage-breakdown {
+  grid-template-columns: 1fr auto;
+}
+
+.storage-breakdown dd {
+  text-align: end;
+  white-space: nowrap;
+}
+
 .storage-meter.is-warn,
 .storage-meter.is-danger {
   accent-color: var(--danger);

@@ -865,7 +865,8 @@ async function suiteGeneral(browser) {
     const { page } = t;
     await t.go('settings');
     const storageCard = page.locator('section[aria-labelledby=settings-storage]');
-    check(await vis(storageCard.getByText(/這個瀏覽器已使用.+，約為上限的 \d+%/)), '設定頁顯示儲存空間用量與百分比');
+    const summary = await storageCard.locator('.storage-summary').innerText();
+    check(/已使用\s+(約 \d+ KB|不到 1 KB)（(不到 1%|\d+%)）/.test(summary) && /剩餘\s+約 [\d.]+ MB/.test(summary) && /估計上限\s+約 5 MB/.test(summary), `設定頁顯示已使用、剩餘與上限（${summary.replace(/\s+/g, ' ')}）`);
     check((await storageCard.locator('progress').getAttribute('aria-label'))?.startsWith('儲存空間已使用'), '用量進度條有文字標籤');
     check((await storageCard.locator('[data-storage-level]').innerText()).includes('空間充足'), '用量少時顯示空間充足（不只靠顏色）');
     check((await page.locator('#notices').innerText()).includes('儲存空間') === false, '用量少時不顯示提醒');
@@ -878,7 +879,8 @@ async function suiteGeneral(browser) {
     const warn = page.locator('#notices .notice--warning', { hasText: '儲存空間已使用約' });
     check(await vis(warn), '用量超過七成時畫面上方提醒');
     check((await storageCard.locator('[data-storage-level]').innerText()).includes('已使用超過七成'), '設定頁顯示超過七成的說明');
-    check(await vis(storageCard.getByText('同網址下其他網站的資料')), '用量明細列出其他網站佔用的空間');
+    check(/剩餘\s+約 1\.\d MB/.test(await storageCard.locator('.storage-summary').innerText()), '用量七成多時剩餘約 1 MB 多');
+    check(await vis(storageCard.getByText('同網址的其他網站')), '用量明細列出其他網站佔用的空間');
     await t.go('today');
     await warn.getByRole('button', { name: '前往設定' }).click();
     await page.waitForSelector('#view-settings:not([hidden]) h2');
