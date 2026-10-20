@@ -26,7 +26,8 @@
 | 邏輯模組 `js/*.js`、`js/cloud/*.js` | 純函式，**不可存取 DOM 或 window**（`storage.js` 接收 storage 參數），以便 `node --test` |
 | `supabase/migrations/*.sql` | 資料表、RLS、`sync_push` 函式（可重複執行） |
 | `supabase/tests/rls_test.sql` | 權限與同步規則測試（交易內執行並 rollback） |
-| `scripts/browser-check.cjs` | 本機功能的 Playwright 檢查（群組：general tasks habits review finance game） |
+| `manifest.webmanifest`、`sw.js`、`icons/`、`js/ui/pwa-view.js` | 安裝到主畫面與離線快取 |
+| `scripts/browser-check.cjs` | 本機功能的 Playwright 檢查（群組：general tasks habits review finance game pwa） |
 | `scripts/cloud-check.cjs`、`scripts/dev/` | 雲端同步檢查與本機 Supabase 相容環境 |
 
 資料流程：畫面呼叫 `commit(nextData)` → 依序套用 `app.transforms`（例如遊戲化結算）→ `app.persist`（寫入 localStorage；登入時另外比對差異、加入同步佇列）→ 成功才更新 `app.data` 並重新繪製。寫入失敗時不套用變更。
@@ -85,4 +86,5 @@ psql -h localhost -p 54322 -U postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_
 - 可重新繪製的按鈕與輸入框要有 `data-focus-key`，重繪後焦點留在原處。
 - 同一習慣同一天 0.4 秒內的重複點按會被忽略（`CHECKIN_REPEAT_GUARD_MS`）。
 - 不要提交使用者資料、備份、CSV 匯出或任何金鑰（見 `.gitignore`）。
+- 離線快取：`sw.js` 的 `APP_SHELL` 必須列出所有網站檔案（新增、改名、刪除 `js/`、`css/`、`icons/` 的檔案時一起更新；`tests/pwa.test.js` 會檢查）。策略是「先網路、失敗才快取」，外部網域（Supabase）不快取。推播通知未提供，不要宣稱有。
 - 修改後至少執行 `npm test`；改到畫面時，盡量執行 `scripts/browser-check.cjs` 並檢查 375px 與桌面寬度。

@@ -1,7 +1,7 @@
 // 瀏覽器端到端檢查（選用）。需要已安裝 Playwright 與 Chromium。
 // 用法：先啟動本機伺服器，再執行
 //   BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs [截圖輸出資料夾] [群組…]
-// 群組：general tasks habits review finance game（不指定時全部執行）。
+// 群組：general tasks habits review finance game pwa（不指定時全部執行）。
 // 每個情境都使用全新的瀏覽器資料，並把時間固定在台灣 2026-10-20（二）10:00，不會動到你平常使用的資料。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -1038,6 +1038,53 @@ async function suiteGeneral(browser) {
   }
 }
 
+// ===================== 安裝與離線 =====================
+
+async function suitePwa(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, timezoneId: 'Asia/Taipei' });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(URL);
+  await page.waitForSelector('#view-today h2');
+  const manifestHref = await page.getAttribute('link[rel=manifest]', 'href');
+  const manifest = await page.evaluate(async (href) => (await fetch(href)).json(), manifestHref);
+  check(manifest.name === '每日管理中心' && manifest.display === 'standalone' && manifest.start_url === './#today' && manifest.icons.length >= 3, '安裝設定（manifest）可讀取，含名稱、獨立視窗模式與圖示');
+  const iconOk = await page.evaluate(async () => (await fetch('icons/icon-512.png')).ok);
+  check(iconOk, '圖示檔可載入');
+  const scope = await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
+  check(scope === URL, `離線快取已啟用，範圍為網站路徑（${scope}）`);
+  await page.reload();
+  await page.waitForSelector('#view-today h2');
+  check(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), '重新整理後頁面由離線快取控管');
+
+  // 離線
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('#view-today h2', { timeout: 10000 });
+  check(await vis(page.getByText('歡迎使用！')), '離線時仍可開啟網站');
+  for (const view of ['tasks', 'habits', 'finance', 'growth', 'settings']) {
+    await page.evaluate((v) => (location.hash = v), `#${view}`);
+    await page.waitForSelector(`#view-${view}:not([hidden]) h2`);
+  }
+  check(true, '離線時六個區域都能切換');
+  await page.evaluate(() => (location.hash = '#tasks'));
+  await page.getByRole('button', { name: '＋ 新增任務' }).click();
+  await page.fill('#task-title', '離線新增的任務');
+  await page.locator('#form-dialog').getByRole('button', { name: '儲存', exact: true }).click();
+  const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).tasks.map((t) => t.title), KEY);
+  check(saved.includes('離線新增的任務'), '離線時新增的資料保存在裝置上');
+  await page.reload();
+  await page.waitForSelector('#view-tasks h2');
+  await page.locator('.segmented label', { hasText: '全部' }).first().click();
+  check(await vis(page.locator('.todo-title', { hasText: '離線新增的任務' })), '離線重新整理後資料仍在');
+  await page.evaluate(() => (location.hash = '#settings'));
+  check(await vis(page.getByRole('heading', { name: '安裝到主畫面與離線使用' })) && (await vis(page.getByText('尚未提供推播通知'))), '設定頁說明安裝方式與推播限制');
+  await ctx.setOffline(false);
+  check(errors.length === 0, `離線操作無 JavaScript 錯誤 ${errors.join(' | ')}`);
+  await ctx.close();
+}
+
 const SUITES = {
   general: [suiteGeneral],
   tasks: [suiteTasks, suiteRecurring, suiteMidnight],
@@ -1045,6 +1092,7 @@ const SUITES = {
   review: [suiteReview],
   finance: [suiteFinance, suiteSubscriptions, suiteCsv],
   game: [suiteGame, suiteGameMigration],
+  pwa: [suitePwa],
 };
 
 (async () => {

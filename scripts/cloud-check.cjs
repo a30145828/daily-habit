@@ -2,6 +2,7 @@
 // 用法：
 //   BASE_URL=http://localhost:8765/daily-habit/ SUPABASE_URL=http://localhost:54321 SUPABASE_ANON_KEY=... \
 //   MAIL_DIR=/tmp/dhstack/mail node scripts/cloud-check.cjs [截圖資料夾]
+// 選用 PWA_URL：另一份已在 js/config.js 填好測試環境設定的網站網址，用來測試「安裝版離線 + 同步」（service worker 不經過攔截）。
 // 透過攔截 js/config.js 指向測試環境，不需要修改程式碼；每個帳號都是新註冊的測試帳號。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -57,6 +58,8 @@ async function device(browser, name, { mobile = true } = {}) {
     hasTouch: mobile,
     timezoneId: 'Asia/Taipei',
     locale: 'zh-TW',
+    // 以攔截 config.js 的方式指定測試環境；service worker 的請求不一定經過攔截，因此這裡關閉。
+    serviceWorkers: 'block',
   });
   await ctx.route('**/js/config.js', (route) =>
     route.fulfill({ contentType: 'text/javascript', body: `export const SUPABASE_URL = ${JSON.stringify(SB_URL)};\nexport const SUPABASE_ANON_KEY = ${JSON.stringify(SB_KEY)};\n` }),
@@ -341,6 +344,58 @@ async function editTask(d, from, to) {
   check(await A.waitStatus(/已同步/), '新密碼可以登入並同步');
   check((await taskTitles(A)).includes('離線新增 1'), '重新登入後下載帳號資料');
   await A.shot('signed-in');
+
+
+  // ===== 安裝版離線：離線開啟、離線修改、恢復連線後同步（需要 PWA_URL：已填好 config.js 的網站） =====
+  if (process.env.PWA_URL) {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, timezoneId: 'Asia/Taipei' });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', (e) => errs.push(String(e)));
+    await page.goto(process.env.PWA_URL);
+    await page.waitForSelector('.view:not([hidden]) h2');
+    const d = { page, go: async (v) => { await page.evaluate((x) => (location.hash = x), `#${v}`); await page.waitForSelector(`#view-${v}:not([hidden]) h2`); } };
+    const emailD = `dora-${RUN}@example.test`;
+    await d.go('settings');
+    await page.locator('.segmented label', { hasText: '註冊' }).click();
+    await page.fill('#auth-email', emailD);
+    await page.fill('#auth-password', PASSWORD);
+    await page.fill('#auth-password2', PASSWORD);
+    const t0 = Date.now() - 1000;
+    await page.getByRole('button', { name: '註冊', exact: true }).click();
+    const linkD = await mailLink(emailD, t0);
+    await page.goto(linkD);
+    await page.waitForSelector('.view:not([hidden]) h2');
+    const statusD = () => page.locator('#status-bar').innerText();
+    const waitD = async (re) => {
+      for (let i = 0; i < 75; i++) {
+        if (re.test(await statusD())) return true;
+        await sleep(200);
+      }
+      return false;
+    };
+    check(await waitD(/已同步/), '已設定雲端的網站：註冊並登入');
+    await page.evaluate(async () => navigator.serviceWorker.ready);
+    await page.reload();
+    await page.waitForSelector('.view:not([hidden]) h2');
+    await ctx.setOffline(true);
+    await page.reload();
+    await page.waitForSelector('.view:not([hidden]) h2', { timeout: 10000 });
+    check(await waitD(/離線中/), `離線開啟已安裝的網站，狀態顯示離線：${await statusD()}`);
+    await d.go('tasks');
+    await page.getByRole('button', { name: '＋ 新增任務' }).click();
+    await page.fill('#task-title', '安裝版離線新增');
+    await page.locator('#form-dialog').getByRole('button', { name: '儲存', exact: true }).click();
+    check(await waitD(/離線中：1 筆變更待同步/), '離線修改排入待同步');
+    await ctx.setOffline(false);
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    check(await waitD(/已同步/), '恢復連線後自動同步');
+    const tokenD = JSON.parse(await page.evaluate(() => localStorage.getItem('daily-habit:session'))).access_token;
+    const rows = await fetch(`${SB_URL}/rest/v1/records?select=data&collection=eq.tasks`, { headers: { apikey: SB_KEY, authorization: `Bearer ${tokenD}` } }).then((r) => r.json());
+    check(rows.some((r) => r.data.title === '安裝版離線新增'), '雲端收到離線時新增的任務');
+    check(errs.length === 0, `安裝版離線情境沒有 JavaScript 錯誤 ${errs.join(' | ')}`);
+    await ctx.close();
+  }
 
   for (const d of [A, B, C]) check(d.errors.length === 0, `裝置 ${d.name} 沒有 JavaScript 錯誤 ${d.errors.join(' | ')}`);
   await browser.close();
