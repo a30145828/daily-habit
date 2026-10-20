@@ -7,3 +7,14 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+
+# 金鑰與環境設定：不要提交（Supabase service_role 金鑰、資料庫密碼只能放在伺服器端的秘密管理介面）
+.env
+.env.*
+*.pem
+supabase/.temp/
+supabase/.branches/
+
+# 匯出的財務資料
+daily-habit-transactions-*.csv
+daily-habit-subscriptions-*.csv

@@ -17,6 +17,7 @@ import {
   setupDialogs,
   showToast,
 } from './ui/core.js';
+import { installAccount } from './ui/account-view.js';
 import { renderFinance } from './ui/finance-view.js';
 import { installGame, settleRewards } from './ui/game-view.js';
 import { renderGrowth } from './ui/growth-view.js';
@@ -130,6 +131,7 @@ function handleStorageEvent(event) {
 
 /** 啟動前的額外步驟（例如帳號登入狀態），由其他模組登記：async () => void */
 export const startupHooks = [];
+installAccount({ loadFrom, startupHooks });
 
 async function init() {
   if (typeof HTMLDialogElement !== 'function') {

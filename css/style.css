@@ -1861,3 +1861,57 @@ fieldset {
 .pref-row {
   margin-top: 12px;
 }
+
+/* ===== 帳號與同步 ===== */
+.status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.sync-status--error,
+.sync-status--expired,
+.sync-status--conflict {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.sync-status--offline,
+.sync-status--pending {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.status-link {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.auth-form {
+  margin-top: 12px;
+}
+
+.conflict-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.conflict {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.conflict-title {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+#auth-message:focus {
+  outline: none;
+}
