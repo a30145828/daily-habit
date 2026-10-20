@@ -1054,3 +1054,346 @@ textarea[aria-invalid='true'] {
     transition: none !important;
   }
 }
+
+/* ===== 第 2 版新增元件 ===== */
+.status-bar:empty {
+  display: none;
+}
+
+.status-bar {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* 6 個導覽項目：手機上縮小字距 */
+@media (max-width: 767px) {
+  .tabs-list {
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  .tab {
+    font-size: 0.72rem;
+    padding: 6px 0;
+  }
+}
+
+.field-hint {
+  margin: -2px 0 6px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+input[type='number'],
+input[type='search'],
+input[type='month'],
+input[type='email'],
+input[type='password'] {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+select[aria-invalid='true'],
+input[aria-invalid='true'],
+fieldset[aria-invalid='true'] {
+  border-color: var(--danger);
+  border-width: 2px;
+}
+
+.toolbar {
+  padding: 12px 0 4px;
+}
+
+.toolbar-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0 12px;
+}
+
+details.filters,
+details.method {
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  background: var(--surface);
+}
+
+details.filters > summary,
+details.method > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+details.method > ul {
+  padding-bottom: 8px;
+}
+
+.segmented--scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.segmented--scroll label {
+  flex-shrink: 0;
+}
+
+.segmented--days span {
+  min-width: 44px;
+  justify-content: center;
+  padding: 8px 10px;
+}
+
+.segmented--days input:checked + span::before {
+  content: '';
+}
+
+.segmented--days input:checked + span {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.mode-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.btn[aria-pressed='true'] {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn[aria-pressed='true']::before {
+  content: '✓ ';
+  white-space: pre;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.badge--repeat {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.badge--tag {
+  background: var(--surface);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.subtask-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.subtask-list .checkbox-label {
+  margin: 0;
+  min-height: 44px;
+  align-items: center;
+}
+
+.is-struck {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.subtask-editor {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.subtask-editor li {
+  display: flex;
+  gap: 8px;
+}
+
+.subtask-editor input {
+  flex: 1;
+  min-width: 0;
+}
+
+.repeat-detail {
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.dialog--wide {
+  width: min(640px, calc(100vw - 24px));
+}
+
+.dialog-actions .spacer {
+  flex: 1;
+}
+
+.choice-list {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.choice-list .btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* 月曆 */
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendar-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin: 8px 0 12px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.calendar-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 48px;
+  min-width: 0;
+  padding: 4px 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.calendar-day.is-outside {
+  opacity: 0.5;
+}
+
+.calendar-day.is-today .calendar-date {
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.calendar-day[aria-pressed='true'] {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+}
+
+.calendar-day:disabled {
+  cursor: default;
+}
+
+.calendar-date {
+  font-size: 0.9rem;
+}
+
+.calendar-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: 999px;
+  min-width: 20px;
+  padding: 0 6px;
+}
+
+.calendar-count.is-done {
+  background: var(--surface-2);
+  color: var(--primary);
+}
+
+.calendar-day .day-mark {
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
+}
+
+.day--rest .day-mark,
+.day-mark.day--rest {
+  background: transparent;
+  border-style: dashed;
+}
+
+.day--extra .day-mark,
+.day-mark.day--extra {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.day--future .day-mark {
+  visibility: hidden;
+}
+
+.status--rest {
+  color: var(--muted);
+}
+
+.habit-schedule {
+  margin: 0;
+}
+
+.summary {
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+}
+
+.summary-link {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* fieldset 預設最小寬度為內容寬度，會撐開手機版面 */
+fieldset {
+  min-width: 0;
+}

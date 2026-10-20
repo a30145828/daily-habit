@@ -68,3 +68,54 @@ test('msUntilNextMidnight 以台灣午夜計算', () => {
 test('formatDateLabel 顯示月/日與星期', () => {
   assert.equal(formatDateLabel('2026-10-20'), '10/20（二）');
 });
+
+import {
+  addMonthsClamped,
+  dayOfWeek,
+  daysInMonth,
+  diffDays,
+  monthDayIn,
+  monthGrid,
+  monthRange,
+  startOfWeek,
+} from '../js/dates.js';
+
+test('月份天數與閏年', () => {
+  assert.equal(daysInMonth(2026, 2), 28);
+  assert.equal(daysInMonth(2028, 2), 29);
+  assert.equal(daysInMonth(2026, 4), 30);
+  assert.deepEqual(monthRange('2026-02'), { start: '2026-02-01', end: '2026-02-28' });
+});
+
+test('每月指定日期：該月沒有這一天時依規則處理', () => {
+  assert.equal(monthDayIn('2026-02', 31, 'last'), '2026-02-28');
+  assert.equal(monthDayIn('2026-02', 31, 'skip'), null);
+  assert.equal(monthDayIn('2026-04', 31, 'last'), '2026-04-30');
+  assert.equal(monthDayIn('2028-02', 30, 'last'), '2028-02-29');
+  assert.equal(monthDayIn('2026-03', 31, 'skip'), '2026-03-31');
+});
+
+test('跨月加月份會以原本的日期為準（1/31 → 2/28 → 3/31）', () => {
+  assert.equal(addMonthsClamped('2026-01-31', 1), '2026-02-28');
+  assert.equal(addMonthsClamped('2026-01-31', 2), '2026-03-31');
+  assert.equal(addMonthsClamped('2026-02-28', 1, 31), '2026-03-31');
+  assert.equal(addMonthsClamped('2026-12-15', 1), '2027-01-15');
+  assert.equal(addMonthsClamped('2026-01-15', -1), '2025-12-15');
+});
+
+test('星期與週起始日', () => {
+  assert.equal(dayOfWeek('2026-10-20'), 2);
+  assert.equal(startOfWeek('2026-10-20', 1), '2026-10-19');
+  assert.equal(startOfWeek('2026-10-19', 1), '2026-10-19');
+  assert.equal(startOfWeek('2026-10-25', 1), '2026-10-19'); // 星期日屬於前一週（週一起始）
+  assert.equal(startOfWeek('2026-10-25', 0), '2026-10-25');
+});
+
+test('日期差與月曆格子', () => {
+  assert.equal(diffDays('2026-10-20', '2026-11-02'), 13);
+  assert.equal(diffDays('2026-12-31', '2027-01-01'), 1);
+  const grid = monthGrid('2026-10', 1);
+  assert.equal(grid.length, 42);
+  assert.equal(grid[0], '2026-09-28');
+  assert.equal(dayOfWeek(grid[0]), 1);
+});
