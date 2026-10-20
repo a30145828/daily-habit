@@ -9,5 +9,6 @@
 //
 // 兩個值都留空時，網站只使用本機模式（資料只存在瀏覽器），所有功能照常可用。
 
-export const SUPABASE_URL = '';
-export const SUPABASE_ANON_KEY = '';
+export const SUPABASE_URL = 'https://xczqtgqoqzzobtpxcrwg.supabase.co';
+export const SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhjenF0Z3FvcXp6b2J0cHhjcndnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0ODE1NTgsImV4cCI6MjEwODA1NzU1OH0.VD_N9KgL-VFaKo1n2z1KSzPjPNA4waeqvyNNiOxoHG4';

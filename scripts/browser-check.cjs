@@ -845,8 +845,16 @@ async function suiteGeneral(browser) {
       check(page.url().startsWith(URL), '網址沒有結尾斜線時也能正常開啟');
     }
     await t.go('settings');
-    check(await vis(page.getByText('雲端同步尚未設定')), '未設定 Supabase 時說明以本機模式運作');
-    check((await page.locator('#status-bar').innerText()).trim() === '', '未設定雲端時不顯示同步狀態');
+    // js/config.js 是否已填入 Supabase：兩種情況都要能以本機模式使用
+    const configured = await page.evaluate(async (u) => Boolean((await import(u)).SUPABASE_URL), new globalThis.URL('js/config.js', URL).href);
+    const statusText = (await page.locator('#status-bar').innerText()).trim();
+    if (configured) {
+      check(await vis(page.getByText('登入後，資料會同步到你的雲端帳號')), '已設定 Supabase、未登入時設定頁顯示登入與註冊');
+      check(statusText.includes('本機模式'), `已設定雲端、未登入時狀態列顯示本機模式（${statusText}）`);
+    } else {
+      check(await vis(page.getByText('雲端同步尚未設定')), '未設定 Supabase 時說明以本機模式運作');
+      check(statusText === '', '未設定雲端時不顯示同步狀態');
+    }
     check(t.errors.length === 0, `無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
     await t.ctx.close();
   }
