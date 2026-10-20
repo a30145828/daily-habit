@@ -12,28 +12,24 @@ import {
   checkDateChange,
   focusHeading,
   focusPending,
-  h,
-  heading,
   registerView,
   render,
-  replaceChildren,
   setupDialogs,
   showToast,
 } from './ui/core.js';
+import { renderFinance } from './ui/finance-view.js';
 import { renderGrowth } from './ui/growth-view.js';
 import { renderHabits } from './ui/habits-view.js';
 import { renderRecovery, renderSettings } from './ui/settings-view.js';
+import { installSubscriptionExtensions } from './ui/subscriptions-view.js';
 import { renderTasks } from './ui/tasks-view.js';
 import { renderToday } from './ui/today-view.js';
-
-function placeholder(view, title, text) {
-  return (panel) => replaceChildren(panel, heading(view, title), h('div', { class: 'empty-state' }, h('p', { class: 'empty-title' }, '開發中'), h('p', {}, text)));
-}
 
 registerView('today', renderToday);
 registerView('tasks', renderTasks);
 registerView('habits', renderHabits);
-registerView('finance', placeholder('finance', '財務', '個人財務與訂閱中心將在下一階段加入。'));
+registerView('finance', renderFinance);
+installSubscriptionExtensions();
 registerView('growth', renderGrowth);
 registerView('settings', renderSettings);
 registerView('recovery', renderRecovery);

@@ -129,3 +129,11 @@ test('migrateData 會依序套用版本轉換', () => {
   assert.throws(() => migrateData({}, 0));
   assert.throws(() => migrateData({}, CURRENT_VERSION + 1), /新/);
 });
+
+test('重複載入範例資料不會產生重複 id（例如固定 id 的預算）', () => {
+  let data = mergeSample(emptyData(), buildSampleData(today, now));
+  data = mergeSample(data, buildSampleData(today, now));
+  const result = validateBackupObject(createBackup(data, now));
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  assert.equal(data.budgets.length, 1);
+});

@@ -496,7 +496,7 @@ function toolbar(results) {
       selectField({
         id: 'task-filter-tag',
         label: '標籤',
-        required: false,
+        required: null,
         value: s.tag,
         options: [{ value: '', label: '全部標籤' }, ...tags.map((tag) => ({ value: tag, label: `#${tag}` }))],
         onChange: (event) => {
@@ -507,7 +507,7 @@ function toolbar(results) {
       selectField({
         id: 'task-filter-priority',
         label: '優先程度',
-        required: false,
+        required: null,
         value: s.priority,
         options: [{ value: '', label: '全部' }, ...Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ value, label }))],
         onChange: (event) => {
@@ -518,7 +518,7 @@ function toolbar(results) {
       selectField({
         id: 'task-sort',
         label: '排序',
-        required: false,
+        required: null,
         value: s.sort,
         options: SORTS.map((value) => ({ value, label: SORT_LABELS[value] })),
         onChange: (event) => {

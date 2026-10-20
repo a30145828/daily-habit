@@ -1,7 +1,7 @@
 // 瀏覽器端到端檢查（選用）。需要已安裝 Playwright 與 Chromium。
 // 用法：先啟動本機伺服器，再執行
 //   BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs [截圖輸出資料夾] [群組…]
-// 群組：tasks habits review（不指定時全部執行）。
+// 群組：tasks habits review finance（不指定時全部執行）。
 // 每個情境都使用全新的瀏覽器資料，並把時間固定在台灣 2026-10-20（二）10:00，不會動到你平常使用的資料。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -444,10 +444,267 @@ async function suiteReview(browser) {
   await t.ctx.close();
 }
 
+
+// ===================== 財務 =====================
+
+async function addTxn(t, { type = '支出', date, amount, currency, category, account, note }) {
+  await t.page.getByRole('button', { name: type === '收入' ? '＋ 收入' : '＋ 支出' }).click();
+  if (date) await t.page.fill('#txn-date', date);
+  await t.page.fill('#txn-amount', amount);
+  if (currency) await t.page.selectOption('#txn-currency', currency);
+  if (category) await t.page.selectOption('#txn-category', { label: category });
+  if (account) await t.page.selectOption('#txn-account', { label: account });
+  if (note) await t.page.fill('#txn-note', note);
+  await t.save();
+}
+
+async function financeTab(t, label) {
+  await t.page.locator('.segmented label', { has: t.page.locator('input[name="finance-tab"]'), hasText: label }).click();
+}
+
+async function suiteFinance(browser) {
+  const t = await open(browser, { hash: '#finance' });
+  const { page } = t;
+
+  // 驗證
+  await page.getByRole('button', { name: '＋ 支出' }).click();
+  await t.save();
+  check(await vis(page.locator('#txn-amount-error')), '金額空白顯示錯誤');
+  await page.fill('#txn-amount', '12.5');
+  await t.save();
+  check((await page.textContent('#txn-amount-error')).includes('不可有小數'), '新台幣不可有小數');
+  await page.fill('#txn-amount', '120');
+  await page.selectOption('#txn-category', { label: '餐飲' });
+  await page.fill('#txn-note', '午餐便當');
+  await t.save();
+  let d = await t.read();
+  check(d.transactions.length === 1 && d.transactions[0].amountMinor === 120 && d.transactions[0].date === '2026-10-20', '新增支出（預設今天、整數金額）');
+
+  await addTxn(t, { type: '收入', amount: '42,000', category: '薪資', note: '十月薪資' });
+  await addTxn(t, { amount: '9.99', currency: 'USD', category: '訂閱', note: '海外軟體' });
+  await addTxn(t, { amount: '1500', category: '交通', note: '高鐵', date: '2026-10-05' });
+  await addTxn(t, { amount: '300', category: '餐飲', note: '上個月聚餐', date: '2026-09-28' });
+  check((await page.inputValue('#month-input')) === '2026-09', '新增其他月份的紀錄後切換到該月，方便確認');
+  await page.getByRole('button', { name: '下個月', exact: true }).click();
+  d = await t.read();
+  check(d.transactions.find((x) => x.currency === 'USD').amountMinor === 999, '美元金額以分儲存（9.99 → 999）');
+  const summary = await page.locator('.money-summary').innerText();
+  check(summary.includes('+NT$42,000') && summary.includes('-NT$1,620') && summary.includes('NT$40,380') && summary.includes('-US$9.99'), `十月收支依幣別分開：${summary.replace(/\n/g, ' ')}`);
+  check(await vis(page.getByText('不同幣別分開統計')), '提示不同幣別不相加');
+  check((await page.locator('.txn').count()) === 4, '只顯示本月（十月）的紀錄');
+  await page.getByRole('button', { name: '上個月', exact: true }).click();
+  check((await page.locator('.txn').count()) === 1 && (await page.locator('.money-summary').innerText()).includes('-NT$300'), '切換到九月');
+  await page.getByRole('button', { name: '下個月', exact: true }).click();
+
+  // 篩選與搜尋
+  await page.locator('details.filters summary').click();
+  await page.fill('#txn-search', '便當');
+  check((await page.locator('.txn').count()) === 1, '文字搜尋（備註）');
+  await page.fill('#txn-search', '1,500');
+  check((await page.locator('.txn').count()) === 1, '文字搜尋（金額）');
+  await page.fill('#txn-search', '');
+  await page.selectOption('#txn-filter-category', { label: '餐飲' });
+  check((await page.locator('.txn').count()) === 1, '分類篩選');
+  await page.selectOption('#txn-filter-category', '');
+  await page.selectOption('#txn-filter-type', 'income');
+  check((await page.locator('.txn').count()) === 1, '類型篩選');
+  await page.selectOption('#txn-filter-type', '');
+
+  // 編輯與刪除
+  await page.getByRole('button', { name: /^編輯 2026-10-05/ }).click();
+  await page.fill('#txn-amount', '1490');
+  await t.save();
+  check((await t.read()).transactions.find((x) => x.note === '高鐵').amountMinor === 1490, '編輯金額');
+  await page.getByRole('button', { name: /^刪除 2026-10-05/ }).click();
+  await page.locator('#confirm-cancel').click();
+  check((await t.read()).transactions.length === 5, '取消刪除時資料不變');
+  await page.getByRole('button', { name: /^刪除 2026-10-05/ }).click();
+  await t.confirmOk();
+  await page.waitForTimeout(100);
+  check((await t.read()).transactions.length === 4, '確認後刪除');
+  await t.shot('finance-txns');
+
+  // 預算
+  await financeTab(t, '預算');
+  await page.getByRole('button', { name: '＋ 設定預算' }).click();
+  await page.selectOption('#budget-category', { label: '餐飲' });
+  await page.fill('#budget-amount', '100');
+  await t.save();
+  check(await vis(page.getByText('超出預算')) && (await page.locator('.budget').innerText()).includes('超支 NT$20'), '預算超支提示（120 / 100）');
+  await page.getByRole('button', { name: '修改「餐飲」預算' }).click();
+  await page.fill('#budget-amount', '3,000');
+  await t.save();
+  check((await page.locator('.budget').innerText()).includes('剩餘 NT$2,880'), '剩餘預算');
+  check((await t.read()).budgets.length === 1, '修改預算不會重複建立');
+
+  // 分類與帳戶
+  await financeTab(t, '分類與帳戶');
+  await page.getByRole('button', { name: '＋ 新增帳戶' }).click();
+  await page.fill('#item-name', '台灣銀行');
+  await t.save();
+  await page.getByRole('button', { name: '＋ 新增分類' }).click();
+  await page.fill('#item-name', '寵物');
+  await t.save();
+  check((await t.read()).categories.some((c) => c.name === '寵物'), '新增分類');
+  check((await page.getByRole('button', { name: '刪除「餐飲」' }).count()) === 0, '使用中的分類不能刪除（只能封存）');
+  await page.getByRole('button', { name: '刪除「寵物」' }).click();
+  await t.confirmOk();
+  await page.waitForTimeout(100);
+  check(!(await t.read()).categories.some((c) => c.name === '寵物'), '未使用的分類可以刪除');
+  await page.getByRole('button', { name: '封存「交通」' }).click();
+  check((await t.read()).categories.find((c) => c.id === 'cat_transport').archived === true, '封存分類');
+  check(await vis(page.getByText('不是銀行餘額')), '說明帳戶累計不是已核對的銀行餘額');
+
+  // 主要幣別
+  await t.go('settings');
+  await page.selectOption('#settings-currency', 'USD');
+  await t.go('finance');
+  await financeTab(t, '收支');
+  await page.getByRole('button', { name: '＋ 支出' }).click();
+  check((await page.inputValue('#txn-currency')) === 'USD', '主要幣別改為美元後成為新增時的預設值');
+  await page.keyboard.press('Escape');
+  check(t.errors.length === 0, `收支操作無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+  await t.ctx.close();
+}
+
+async function suiteSubscriptions(browser) {
+  const t = await open(browser, { hash: '#finance' });
+  const { page } = t;
+  await financeTab(t, '訂閱');
+  const addSub = async ({ name, amount, every = '1', unit = 'month', next, currency }) => {
+    await page.getByRole('button', { name: '＋ 新增訂閱' }).click();
+    await page.fill('#sub-name', name);
+    await page.fill('#sub-amount', amount);
+    if (currency) await page.selectOption('#sub-currency', currency);
+    await page.fill('#sub-every', every);
+    await page.selectOption('#sub-unit', unit);
+    await page.fill('#sub-next', next);
+    await t.save();
+  };
+  await page.getByRole('button', { name: '＋ 新增訂閱' }).click();
+  await t.save();
+  check(await vis(page.locator('#sub-name-error')) && await vis(page.locator('#sub-next-error')), '訂閱必填欄位錯誤');
+  await page.keyboard.press('Escape');
+  await addSub({ name: '影音串流', amount: '390', next: '2026-10-22' });
+  await addSub({ name: '雲端空間', amount: '1490', unit: 'year', next: '2027-01-31' });
+  await addSub({ name: '海外工具', amount: '9.99', currency: 'USD', next: '2026-10-21' });
+  const estimate = await page.locator('#sub-estimate').locator('..').innerText();
+  check(estimate.includes('NT$514') && estimate.includes('NT$6,170') && estimate.includes('含估算') && estimate.includes('US$9.99'), `預估：每月 390 + 1490/12、全年 6,170，美元分開：${estimate.replace(/\n/g, ' ').slice(0, 160)}`);
+  const upcoming = await page.locator('.renewal-list').first().innerText();
+  check(upcoming.includes('影音串流') && upcoming.includes('海外工具') && upcoming.includes('預估') && !upcoming.includes('雲端空間'), '近期續費（30 天內）只列出接下來會扣款的');
+
+  // 今日頁站內提醒
+  await t.go('today');
+  check((await page.locator('.summary').innerText()).includes('7 天內續費'), '今日摘要顯示近期續費');
+  check(await vis(page.locator('section[aria-labelledby=today-renewals]')), '今日頁顯示續費提醒');
+  await page.getByRole('button', { name: '為「影音串流」2026-10-22 的續費建立提醒任務' }).click();
+  let d = await t.read();
+  const remind = d.tasks.find((x) => x.id.startsWith('t_subrem_'));
+  check(remind && remind.dueDate === '2026-10-20' && remind.title === '續費提醒：影音串流', '建立提醒任務（截止日不早於今天）');
+  check(await vis(page.locator('section[aria-labelledby=today-renewals]').getByText('✓ 已建立提醒任務')) && (await page.getByRole('button', { name: '為「影音串流」2026-10-22 的續費建立提醒任務' }).count()) === 0, '已建立後不再顯示建立按鈕，避免重複');
+  check((await page.locator('#view-today .todo-title', { hasText: '續費提醒：影音串流' }).count()) === 1, '提醒任務出現在今日任務');
+
+  // 記錄扣款（未來日期擋下）
+  await t.go('finance');
+  await page.getByRole('button', { name: '記錄「影音串流」2026-10-22 的扣款' }).click();
+  await t.dialog.getByRole('button', { name: '建立扣款紀錄' }).click();
+  check((await page.textContent('#charge-date-error')).includes('不能是未來'), '扣款日不能是未來日期');
+  await page.fill('#charge-date', '2026-10-20');
+  await t.dialog.getByRole('button', { name: '建立扣款紀錄' }).click();
+  d = await t.read();
+  const sub = d.subscriptions.find((x) => x.name === '影音串流');
+  check(d.transactions.length === 1 && d.transactions[0].subscriptionId === sub.id && d.transactions[0].chargeDate === '2026-10-22' && sub.nextRenewal === '2026-11-22', '記錄扣款：建立實際支出並推進下次續費日');
+  await financeTab(t, '收支');
+  check((await page.locator('.money-summary').innerText()).includes('-NT$390'), '扣款計入十月支出（一次）');
+  check(await vis(page.getByText('🔁 訂閱：影音串流')), '交易標示所屬訂閱');
+
+  // 既有交易連結（避免重複記帳）
+  await addTxn(t, { amount: '9.99', currency: 'USD', note: 'TOOL*CHARGE', date: '2026-10-19' });
+  await financeTab(t, '訂閱');
+  await page.getByRole('button', { name: '記錄「海外工具」2026-10-21 的扣款' }).click();
+  check(await vis(t.dialog.getByText('可能已經記錄過')), '找到金額相同、日期相近的既有支出');
+  await t.dialog.getByRole('button', { name: /連結為這次扣款/ }).click();
+  d = await t.read();
+  check(d.transactions.length === 2 && d.transactions.find((x) => x.note === 'TOOL*CHARGE').chargeDate === '2026-10-21', '連結既有交易，不新增第二筆');
+  check(d.subscriptions.find((x) => x.name === '海外工具').nextRenewal === '2026-11-21', '連結後推進下次續費日');
+
+  // 暫停、取消、封存、刪除
+  await page.getByRole('button', { name: '暫停「雲端空間」' }).click();
+  const est2 = await page.locator('#sub-estimate').locator('..').innerText();
+  check(est2.includes('NT$390') && !est2.includes('NT$514'), '暫停的訂閱不計入預估');
+  await page.getByRole('button', { name: '恢復「雲端空間」' }).click();
+  await page.getByRole('button', { name: '將「雲端空間」標示為已取消' }).click();
+  check((await t.read()).subscriptions.find((x) => x.name === '雲端空間').status === 'cancelled', '取消訂閱');
+  await page.getByRole('button', { name: '刪除「影音串流」' }).click();
+  check(await vis(page.getByText('只能封存，不能刪除')), '已有扣款紀錄的訂閱不能刪除');
+  await page.getByRole('button', { name: '封存「影音串流」' }).click();
+  check((await t.read()).subscriptions.find((x) => x.name === '影音串流').archived === true, '封存訂閱');
+  await t.shot('finance-subs');
+  check(t.errors.length === 0, `訂閱操作無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+  await t.ctx.close();
+}
+
+async function suiteCsv(browser) {
+  const t = await open(browser, { hash: '#finance' });
+  const { page } = t;
+  await addTxn(t, { amount: '120', category: '餐飲', note: '午餐', date: '2026-10-01' });
+  await financeTab(t, '匯入匯出');
+  const csvPath = path.join(OUT, 'bank.csv');
+  fs.writeFileSync(
+    csvPath,
+    '﻿日期,金額,說明,類別,帳戶\r\n' +
+      '2026/10/01,-120,午餐,餐飲,現金\r\n' + // 與現有重複
+      '2026/10/02,-80,咖啡,餐飲,現金\r\n' +
+      '2026/10/02,-80,咖啡,餐飲,現金\r\n' + // 檔案內重複
+      '2026/10/05,"52,000",薪水,薪資,台灣銀行\r\n' +
+      '2026/13/01,-10,錯誤日期,,\r\n' +
+      '2026/10/06,-300,"飼料, 罐頭",寵物,\r\n',
+  );
+  await page.setInputFiles('#csv-file', csvPath);
+  check((await page.inputValue('#csv-map-date')) === '0' && (await page.inputValue('#csv-map-note')) === '2' && (await page.inputValue('#csv-sign')) === 'negative', '自動對應欄位（日期、說明、負數為支出）');
+  await page.getByRole('button', { name: '3. 預覽與檢查' }).click();
+  check(await vis(page.getByText('可匯入 3 筆、可能重複 2 筆、錯誤 1 筆')), '預覽：可匯入、重複、錯誤筆數');
+  check(await vis(page.getByText('會新增分類：寵物（支出）')) && await vis(page.getByText('會新增帳戶：台灣銀行')), '預覽列出會新增的分類與帳戶');
+  check((await page.locator('.csv-table tbody tr').count()) === 6, '預覽表格逐列顯示');
+  await page.getByRole('button', { name: '確認匯入 3 筆' }).click();
+  await page.locator('#confirm-cancel').click();
+  check((await t.read()).transactions.length === 1, '取消確認時不匯入');
+  await page.getByRole('button', { name: '確認匯入 3 筆' }).click();
+  await t.confirmOk();
+  await page.waitForTimeout(150);
+  let d = await t.read();
+  check(d.transactions.length === 4 && d.transactions.filter((x) => x.source === 'csv').length === 3, '匯入 3 筆（略過重複與錯誤）');
+  check(d.transactions.some((x) => x.note === '飼料, 罐頭'), '引號內的逗號正確解析');
+  // 再匯入同一個檔案
+  await page.setInputFiles('#csv-file', csvPath);
+  await page.getByRole('button', { name: '3. 預覽與檢查' }).click();
+  check(await vis(page.getByText('可匯入 0 筆、可能重複 5 筆')), '同一個檔案再匯入：全部標示為可能重複');
+  check(await page.getByRole('button', { name: '確認匯入 0 筆' }).isDisabled(), '沒有可匯入的資料時不能確認');
+  await page.getByRole('button', { name: '取消匯入' }).first().click();
+
+  // 匯出
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '匯出收支 CSV' }).click()]);
+  const exportPath = path.join(OUT, dl.suggestedFilename());
+  await dl.saveAs(exportPath);
+  const content = fs.readFileSync(exportPath, 'utf8');
+  check(dl.suggestedFilename() === 'daily-habit-transactions-2026-10-20.csv' && content.startsWith('﻿日期,類型,金額,幣別') && content.includes('"飼料, 罐頭"'), '匯出收支 CSV（含 BOM、標題、引號）');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '匯出訂閱 CSV' }).click()]);
+  check(dl2.suggestedFilename() === 'daily-habit-subscriptions-2026-10-20.csv', '匯出訂閱 CSV');
+  // 匯出的檔案可以再匯入（全部重複）
+  await page.setInputFiles('#csv-file', exportPath);
+  check((await page.inputValue('#csv-sign')) === 'type', '匯出的 CSV 再匯入時自動使用「類型」欄位');
+  await page.getByRole('button', { name: '3. 預覽與檢查' }).click();
+  check(await vis(page.getByText('可匯入 0 筆、可能重複 4 筆')), '匯出後再匯入不會重複記帳');
+  await t.shot('finance-csv');
+  check(t.errors.length === 0, `CSV 操作無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+  await t.ctx.close();
+}
+
 const SUITES = {
   tasks: [suiteTasks, suiteRecurring, suiteMidnight],
   habits: [suiteHabits],
   review: [suiteReview],
+  finance: [suiteFinance, suiteSubscriptions, suiteCsv],
 };
 
 (async () => {
@@ -459,7 +716,7 @@ const SUITES = {
       try {
         await suite(browser);
       } catch (error) {
-        check(false, `${suite.name} 發生例外：${error.message.split('\n')[0]}`);
+        check(false, `${suite.name} 發生例外：${error.message.split('\n').slice(0, 3).join(' ')}`);
       }
     }
   }

@@ -282,7 +282,9 @@ function errorNode(id) {
   return h('p', { id: `${id}-error`, class: 'field-error', hidden: true });
 }
 
+/** required 為 null 時不顯示必填／選填標示（例如篩選欄位）。 */
 function labelNode(id, label, required) {
+  if (required === null) return h('label', { for: id }, label);
   return h(
     'label',
     { for: id },
