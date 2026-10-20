@@ -225,12 +225,12 @@ async function confirmImport(onConfirm) {
 // ---------- 儲存空間用量 ----------
 
 const STORAGE_KIND_LABELS = {
-  current: '目前使用的資料（任務、習慣、財務等）',
+  current: '目前的資料',
   local: '未登入時的本機資料',
-  account: '帳號資料快取與待同步紀錄',
-  preserved: '升級前或損壞時另存的原始資料',
-  app: '本工具的其他設定',
-  other: '同網址下其他網站的資料',
+  account: '帳號快取與待同步',
+  preserved: '升級前或損壞時另存',
+  app: '其他設定',
+  other: '同網址的其他網站',
 };
 
 const STORAGE_LEVEL_TEXT = {
@@ -268,24 +268,35 @@ function renderStorageUsage() {
     return card('settings-storage', '儲存空間', h('p', {}, '瀏覽器目前不允許讀取儲存空間，無法計算用量。'));
   }
   const percent = storagePercent(usage);
+  const percentText = usage.used > 0 && percent === 0 ? '不到 1%' : `${percent}%`;
   return card(
     'settings-storage',
     '儲存空間',
-    h('p', {}, `這個瀏覽器已使用${formatStorageSize(usage.used)}，約為上限的 ${percent}%。`),
+    h(
+      'dl',
+      { class: 'details storage-summary' },
+      h('dt', {}, '已使用'),
+      h('dd', {}, `${formatStorageSize(usage.used)}（${percentText}）`),
+      h('dt', {}, '剩餘'),
+      h('dd', {}, formatStorageSize(Math.max(0, usage.limit - usage.used))),
+      h('dt', {}, '估計上限'),
+      h('dd', {}, `約 ${usage.limit / 1_000_000} MB`),
+    ),
     h('progress', {
       class: `storage-meter is-${usage.level}`,
       max: '100',
       value: String(percent),
-      'aria-label': `儲存空間已使用 ${percent}%`,
+      'aria-label': `儲存空間已使用 ${percentText}`,
     }),
     h(
       'p',
       { class: usage.level === 'ok' ? 'small' : `small notice notice--${usage.level === 'danger' ? 'error' : 'warning'}`, 'data-storage-level': usage.level },
       STORAGE_LEVEL_TEXT[usage.level],
     ),
+    h('h4', { class: 'field-label' }, '各類資料佔用'),
     h(
       'dl',
-      { class: 'details' },
+      { class: 'details storage-breakdown' },
       Object.entries(usage.kinds)
         .filter(([, size]) => size > 0)
         .map(([kind, size]) => [h('dt', {}, STORAGE_KIND_LABELS[kind]), h('dd', {}, formatStorageSize(size))]),
@@ -293,7 +304,7 @@ function renderStorageUsage() {
     h(
       'ul',
       { class: 'bullets small' },
-      h('li', {}, `上限依瀏覽器不同，這裡以約 ${STORAGE_LIMIT_CHARS / 1_000_000} MB 估算。同一個網址（${location.host || '本機'}）下的所有網站共用這個空間。`),
+      h('li', {}, `上限依瀏覽器不同，這裡以約 ${STORAGE_LIMIT_CHARS / 1_000_000} MB 估算，剩餘空間也是估計值。同一個網址（${location.host || '本機'}）下的所有網站共用這個空間。`),
       h('li', {}, '空間不足時，新的變更不會保存，但已經保存的資料不會被刪除。'),
       app.session ? h('li', {}, '你已登入：資料也存在雲端，但這台裝置的空間滿了之後，新的變更無法保存也無法上傳。') : null,
     ),
