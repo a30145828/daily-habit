@@ -467,7 +467,7 @@ main:focus {
 }
 
 .btn--small {
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 12px;
   font-size: 0.95rem;
 }
@@ -599,8 +599,8 @@ textarea[aria-invalid='true'] {
 
 .checkbox-label input,
 .todo-check input {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   margin: 2px 0 0;
   accent-color: var(--primary);
   flex-shrink: 0;
@@ -711,11 +711,11 @@ textarea[aria-invalid='true'] {
 
 .todo {
   display: grid;
-  grid-template-columns: 32px 1fr;
+  grid-template-columns: 44px 1fr;
   grid-template-areas:
     'check main'
     '. actions';
-  gap: 4px 8px;
+  gap: 4px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -724,14 +724,21 @@ textarea[aria-invalid='true'] {
 
 @media (min-width: 560px) {
   .todo {
-    grid-template-columns: 32px 1fr auto;
+    grid-template-columns: 44px 1fr auto;
     grid-template-areas: 'check main actions';
   }
 }
 
 .todo-check {
   grid-area: check;
-  padding-top: 2px;
+  /* 整個 44×44 區域都可點擊勾選 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px 0 0 -6px;
+  cursor: pointer;
 }
 
 .todo-main {

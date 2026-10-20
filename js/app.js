@@ -197,12 +197,14 @@ function scheduleMidnight() {
   }, msUntilNextMidnight() + 500);
 }
 
+/** 檢查是否已換日；換日時更新畫面並回傳 true。 */
 function checkDateChange() {
   const key = toDateKey();
-  if (key === app.todayKey) return;
+  if (key === app.todayKey) return false;
   app.todayKey = key;
   render();
   showToast('已進入新的一天，今日資料已更新。');
+  return true;
 }
 
 // ---------- 訊息 ----------
@@ -364,7 +366,7 @@ function renderToday() {
         h(
           'div',
           { class: 'button-row' },
-          button('新增第一筆待辦', () => openTodoDialog(null, app.todayKey), { variant: 'primary', focusKey: 'welcome-todo' }),
+          button('新增第一筆待辦', () => openTodoDialog(null, { dueToday: true }), { variant: 'primary', focusKey: 'welcome-todo' }),
           button('新增第一個習慣', goAddHabit, { variant: 'primary', focusKey: 'welcome-habit' }),
         ),
         h('p', { class: 'muted' }, '想先看看效果？可以載入範例資料，之後隨時能刪除或封存。'),
@@ -405,7 +407,7 @@ function renderToday() {
         'div',
         { class: 'section-head' },
         h('h3', { id: 'today-due', class: 'section-title' }, `今天到期（${dueToday.length}）`),
-        button('＋ 新增今天到期的待辦', () => openTodoDialog(null, app.todayKey), {
+        button('＋ 新增今天到期的待辦', () => openTodoDialog(null, { dueToday: true }), {
           variant: 'primary',
           size: 'small',
           focusKey: 'today-add-todo',
@@ -471,7 +473,7 @@ function renderTodoItem(todo) {
     'li',
     { class: `todo${todo.done ? ' is-done' : ''}` },
     h(
-      'div',
+      'label',
       { class: 'todo-check' },
       h('input', {
         type: 'checkbox',
@@ -584,7 +586,9 @@ function renderTodos() {
 
 // ----- 待辦表單 -----
 
-function openTodoDialog(todo, defaultDueDate = null) {
+function openTodoDialog(todo, { dueToday = false } = {}) {
+  if (dueToday) checkDateChange();
+  const defaultDueDate = dueToday ? app.todayKey : null;
   const form = $('todo-form');
   form.reset();
   clearTodoErrors();
@@ -852,7 +856,16 @@ function renderArchivedCard(habit) {
   );
 }
 
+// 防止連點兩下時「剛打卡就被取消」。
+const CHECKIN_REPEAT_GUARD_MS = 400;
+const lastCheckinTap = new Map();
+
 function toggleHabitToday(habit) {
+  // 手機休眠後計時器可能還沒更新日期；畫面若還停在昨天，先更新畫面，不寫入錯誤的日期。
+  if (checkDateChange()) return;
+  const now = Date.now();
+  if (now - (lastCheckinTap.get(habit.id) ?? -Infinity) < CHECKIN_REPEAT_GUARD_MS) return;
+  lastCheckinTap.set(habit.id, now);
   const done = isCheckedIn(app.data.checkins, habit.id, app.todayKey);
   const checkins = setCheckin(app.data.checkins, habit.id, app.todayKey, !done);
   commit({ ...app.data, checkins }, done ? `已取消「${habit.name}」今天的打卡。` : `「${habit.name}」今天已打卡！`);
@@ -1118,8 +1131,7 @@ async function confirmImport() {
 }
 
 async function loadSampleData() {
-  const { todos, habits, checkins } = app.data;
-  if (todos.length + habits.length > 0) {
+  if (app.data.todos.length + app.data.habits.length > 0) {
     const ok = await confirmAction({
       title: '加入範例資料？',
       message: '範例資料會「加入」到目前的資料中，不會刪除你原有的內容。\n範例項目名稱前會標示「（範例）」，之後可以自行刪除或封存。',
@@ -1127,6 +1139,7 @@ async function loadSampleData() {
     });
     if (!ok) return;
   }
+  const { todos, habits, checkins } = app.data;
   const sample = buildSampleData(app.todayKey);
   commit(
     {

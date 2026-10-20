@@ -132,6 +132,7 @@ function check(cond, msg) { console.log(`${cond ? 'PASS' : 'FAIL'} ${msg}`); if 
   await page.getByRole('link', { name: '今日' }).click(); await page.waitForSelector('#view-today:not([hidden])');
   check(await vis(page.locator('.habit--compact', { hasText: '喝水 8 杯' }).getByText('✓ 今天已打卡')), '今日頁顯示已打卡（文字標示）');
   await page.getByRole('button', { name: '為「伸展」完成今天的打卡' }).click();
+  await page.waitForTimeout(500); // 實際操作間隔（0.4 秒內的連點會被忽略）
   await page.getByRole('button', { name: '取消「伸展」今天的打卡' }).click();
   data = await stored();
   check(data.checkins.length === 1, '取消打卡後移除紀錄');
@@ -334,6 +335,221 @@ function check(cond, msg) { console.log(`${cond ? 'PASS' : 'FAIL'} ${msg}`); if 
   await p5.press('#habit-name', 'Enter');
   check(await vis(p5.locator('.habit-name', { hasText: '暫存習慣' })) && errs5.length === 0, '無法儲存時仍可暫時使用');
   await ctx5.close();
+
+  // ===== 交付前檢查追加項目 =====
+  const blank = async (opts = {}) => {
+    const c = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, timezoneId: 'Asia/Taipei', acceptDownloads: true, ...opts });
+    const pg = await c.newPage();
+    const errs = [];
+    pg.on('pageerror', (e) => errs.push(String(e)));
+    return { c, pg, errs, read: () => pg.evaluate((k) => JSON.parse(localStorage.getItem(k)), KEY) };
+  };
+
+  // 部署子路徑：所有資源成功載入、樣式套用
+  {
+    const { c, pg } = await blank();
+    const bad = [];
+    const loaded = [];
+    pg.on('response', (r) => { loaded.push(r.url()); if (r.status() >= 400) bad.push(`${r.status()} ${r.url()}`); });
+    pg.on('requestfailed', (r) => bad.push(`failed ${r.url()}`));
+    await pg.goto(URL);
+    await pg.waitForSelector('#view-today h2');
+    const base = new globalThis.URL(URL).pathname;
+    check(bad.length === 0, `部署路徑 ${base} 下沒有載入失敗的資源 ${bad.join(' ')}`);
+    check(loaded.some((u) => u.endsWith(`${base}css/style.css`)) && loaded.some((u) => u.endsWith(`${base}js/app.js`)), '樣式與程式由相對路徑載入');
+    check((await pg.evaluate(() => getComputedStyle(document.body).backgroundColor)) !== 'rgba(0, 0, 0, 0)', '樣式已套用');
+    if (base !== '/') {
+      await pg.goto(URL.replace(/\/$/, ''));
+      await pg.waitForSelector('#view-today h2');
+      check(pg.url() === URL, '網址未加結尾斜線時會導向正確路徑並正常顯示');
+    }
+    await c.close();
+  }
+
+  // 手機觸控範圍與表單操作（點擊）
+  {
+    const { c, pg, errs, read } = await blank();
+    await pg.goto(URL);
+    await pg.getByRole('button', { name: '載入範例資料' }).tap();
+    for (const v of ['today', 'todos', 'habits', 'settings']) {
+      await pg.goto(URL + '#' + v);
+      await pg.waitForSelector(`#view-${v}:not([hidden]) h2`);
+      const small = await pg.evaluate(() =>
+        [...document.querySelectorAll('button, a.tab, .segmented span, label.todo-check, input[type=text], input[type=date]')]
+          .filter((e) => e.offsetParent)
+          .map((e) => { const r = e.getBoundingClientRect(); return { t: (e.getAttribute('aria-label') || e.textContent).trim().slice(0, 12), w: r.width, h: r.height }; })
+          .filter((x) => x.w < 44 || x.h < 44),
+      );
+      check(small.length === 0, `手機「${v}」可點擊元素至少 44×44px ${JSON.stringify(small)}`);
+    }
+    await pg.goto(URL + '#todos');
+    await pg.waitForSelector('#view-todos:not([hidden]) h2');
+    const title = '（範例）買牛奶和雞蛋';
+    check((await pg.getByRole('checkbox', { name: title }).count()) === 1, '勾選框的名稱為待辦名稱');
+    const box = await pg.locator('.todo', { hasText: title }).locator('label.todo-check').boundingBox();
+    await pg.touchscreen.tap(box.x + 3, box.y + 3); // 點勾選框外圍
+    await pg.waitForTimeout(100);
+    check((await read()).todos.find((t) => t.title === title).done === true, '點擊勾選框外圍（44px 範圍內）即可完成');
+    // 手機表單：點按新增、輸入、點按優先程度與儲存
+    await pg.getByRole('button', { name: '＋ 新增待辦' }).tap();
+    const dlg = await pg.locator('#todo-dialog').boundingBox();
+    check(dlg.width <= 375 && dlg.x >= 0, '手機版對話框不超出畫面');
+    await pg.locator('#todo-title').tap();
+    await pg.keyboard.type('手機新增');
+    await pg.locator('#todo-form label:has-text("低")').tap();
+    await pg.locator('#todo-due').fill('2026-12-31');
+    await pg.getByRole('button', { name: '儲存' }).first().tap();
+    await pg.waitForTimeout(100);
+    const t = (await read()).todos.find((x) => x.title === '手機新增');
+    check(t && t.priority === 'low' && t.dueDate === '2026-12-31', '手機點按操作新增待辦（名稱、日期、優先程度）');
+    await pg.locator('.tab', { hasText: '習慣' }).tap();
+    await pg.waitForSelector('#view-habits:not([hidden]) h2');
+    check(pg.url().endsWith('#habits'), '手機點按底部導覽切換區域');
+    check(errs.length === 0, `手機操作無 JavaScript 錯誤 ${errs.join(' | ')}`);
+    await c.close();
+  }
+
+  // 習慣重複操作：連點兩下、反覆打卡與取消、封存還原多次
+  {
+    const { c, pg, read } = await blank();
+    await pg.goto(URL + '#habits');
+    await pg.fill('#habit-name', '連點測試');
+    await pg.press('#habit-name', 'Enter');
+    await pg.getByRole('button', { name: '為「連點測試」完成今天的打卡' }).dblclick();
+    await pg.waitForTimeout(100);
+    check((await read()).checkins.length === 1, '連點兩下打卡：只記錄一筆，且不會被立即取消');
+    for (let i = 0; i < 4; i++) {
+      await pg.waitForTimeout(500);
+      await pg.locator('.habit.card', { hasText: '連點測試' }).locator('.habit-actions button').first().click();
+    }
+    await pg.waitForTimeout(100);
+    check((await read()).checkins.length === 1, '反覆打卡／取消四次後回到已打卡，仍只有一筆');
+    // 從今日頁再按一次（取消），再回到習慣頁打卡
+    await pg.waitForTimeout(500);
+    await pg.goto(URL + '#today');
+    await pg.getByRole('button', { name: '取消「連點測試」今天的打卡' }).click();
+    await pg.waitForTimeout(500);
+    await pg.goto(URL + '#habits');
+    await pg.getByRole('button', { name: '為「連點測試」完成今天的打卡' }).click();
+    check((await read()).checkins.length === 1, '跨頁面打卡與取消不會產生重複紀錄');
+    // 加入過去的打卡紀錄，模擬多天歷史後封存／還原兩次
+    await pg.evaluate((k) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const h = d.habits[0];
+      h.createdDate = '2026-01-01';
+      const today = d.checkins[0].date;
+      const [y, m, dd] = today.split('-').map(Number);
+      for (const off of [1, 2, 4]) {
+        const dt = new Date(y, m - 1, dd - off);
+        d.checkins.push({ habitId: h.id, date: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`, createdAt: null });
+      }
+      localStorage.setItem(k, JSON.stringify(d));
+    }, KEY);
+    await pg.reload();
+    await pg.waitForSelector('#view-habits h2');
+    const doneBefore = await pg.locator('.habit.card', { hasText: '連點測試' }).locator('.day--done').count();
+    for (let i = 0; i < 2; i++) {
+      await pg.getByRole('button', { name: '封存「連點測試」' }).click();
+      check((await pg.locator('.habit.is-archived', { hasText: '連點測試' }).locator('.day--done').count()) === doneBefore, `第 ${i + 1} 次封存後七天紀錄仍顯示 ${doneBefore} 天完成`);
+      await pg.getByRole('button', { name: '還原「連點測試」' }).click();
+    }
+    check((await read()).checkins.length === 4 && doneBefore === 4, '封存與還原多次後打卡紀錄完整保留（4 筆）');
+    const statuses = await pg.locator('.habit.card', { hasText: '連點測試' }).locator('.week .day').evaluateAll((els) => els.map((e) => e.className.replace('day day--', '')));
+    check(JSON.stringify(statuses) === JSON.stringify(['missed', 'missed', 'done', 'missed', 'done', 'done', 'done']), `七天紀錄狀態正確 ${statuses}`);
+    await c.close();
+  }
+
+  // Asia/Taipei 午夜前後打卡、以及頁面停在昨天時的保護
+  {
+    const { c, pg, read } = await blank({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false });
+    await pg.clock.install({ time: new Date('2026-10-20T15:59:00Z') }); // 台灣 10/20 23:59
+    await pg.goto(URL + '#habits');
+    await pg.fill('#habit-name', '午夜');
+    await pg.press('#habit-name', 'Enter');
+    await pg.getByRole('button', { name: '為「午夜」完成今天的打卡' }).click();
+    check((await read()).checkins[0].date === '2026-10-20', '台灣 23:59 打卡記為 10/20');
+    await pg.clock.runFor(2 * 60 * 1000); // 台灣 10/21 00:01
+    check((await pg.textContent('#today-label')).includes('10 月 21 日'), '00:01 畫面自動換到 10/21');
+    await pg.getByRole('button', { name: '為「午夜」完成今天的打卡' }).click();
+    let ck = (await read()).checkins.map((x) => x.date).sort();
+    check(JSON.stringify(ck) === '["2026-10-20","2026-10-21"]', `00:01 打卡記為 10/21，兩天各一筆 ${ck}`);
+    const st = await pg.locator('.habit.card', { hasText: '午夜' }).locator('.week .day').evaluateAll((els) => els.map((e) => e.className.replace('day day--', '')));
+    check(JSON.stringify(st.slice(-2)) === '["done","done"]' && st.slice(0, 4).every((x) => x === 'not-started'), `跨午夜七天紀錄：10/20 與今天皆完成，建立前不算漏 ${st}`);
+    // 計時器沒有執行（例如手機休眠）而系統時間已到隔天
+    await pg.clock.pauseAt(new Date('2026-10-21T15:59:30Z')); // 台灣 10/21 23:59:30
+    await pg.clock.setSystemTime(new Date('2026-10-21T16:03:00Z')); // 台灣 10/22 00:03，計時器尚未觸發
+    check((await pg.textContent('#today-label')).includes('10 月 21 日'), '（模擬）計時器尚未觸發，畫面仍停在 10/21');
+    await pg.getByRole('button', { name: '取消「午夜」今天的打卡' }).click();
+    ck = (await read()).checkins.map((x) => x.date).sort();
+    check(JSON.stringify(ck) === '["2026-10-20","2026-10-21"]', '畫面停在昨天時按打卡按鈕，不會改動昨天的紀錄');
+    check((await pg.textContent('#today-label')).includes('10 月 22 日'), '按下後畫面立即更新為 10/22');
+    await pg.getByRole('button', { name: '為「午夜」完成今天的打卡' }).click();
+    ck = (await read()).checkins.map((x) => x.date).sort();
+    check(ck.at(-1) === '2026-10-22' && ck.length === 3, '更新後再按，記為 10/22');
+    await c.close();
+  }
+
+  // 備份：匯出→清除→還原；損壞與不支援版本不覆蓋
+  {
+    const { c, pg, read } = await blank();
+    await pg.goto(URL);
+    await pg.getByRole('button', { name: '載入範例資料' }).click();
+    await pg.goto(URL + '#settings');
+    const original = await read();
+    const [dl] = await Promise.all([pg.waitForEvent('download'), pg.getByRole('button', { name: '下載備份檔' }).click()]);
+    const backupPath = path.join(OUT, 'roundtrip.json');
+    await dl.saveAs(backupPath);
+    await pg.getByRole('button', { name: '清除所有資料…' }).click();
+    await pg.locator('#confirm-ok').click();
+    await pg.waitForFunction((k) => JSON.parse(localStorage.getItem(k)).todos.length === 0, KEY);
+    await pg.goto(URL + '#settings');
+    await pg.setInputFiles('#import-file', backupPath);
+    await pg.getByRole('button', { name: '以此備份還原…' }).click();
+    await pg.locator('#confirm-ok').click();
+    await pg.waitForFunction((k) => JSON.parse(localStorage.getItem(k)).todos.length > 0, KEY);
+    const restored = await read();
+    check(JSON.stringify({ t: restored.todos, h: restored.habits, c: restored.checkins }) === JSON.stringify({ t: original.todos, h: original.habits, c: original.checkins }), '匯出→清除→還原後資料與原本完全相同');
+    await pg.reload();
+    await pg.goto(URL + '#todos');
+    check((await pg.locator('#view-todos .todo').count()) === original.todos.length, '還原後重新整理仍保留');
+
+    const exported = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    const cases = [
+      ['不支援的新版本（version 2）', JSON.stringify({ ...exported, version: 2 }), /版本 2/],
+      ['缺少版本', JSON.stringify({ ...exported, version: undefined }), /缺少資料版本/],
+      ['檔案被截斷（損壞 JSON）', fs.readFileSync(backupPath, 'utf8').slice(0, 200), /JSON/],
+      ['其他程式的 JSON', JSON.stringify({ hello: 'world' }), /不是/],
+      ['日期錯誤', JSON.stringify({ ...exported, data: { ...exported.data, todos: [{ ...exported.data.todos[0], dueDate: '2026-02-30' }] } }), /截止日期/],
+      ['識別碼重複', JSON.stringify({ ...exported, data: { ...exported.data, habits: [exported.data.habits[0], exported.data.habits[0]] } }), /重複/],
+      ['空檔案', '', /空/],
+    ];
+    await pg.goto(URL + '#settings');
+    for (const [name, text, re] of cases) {
+      const before = await pg.evaluate((k) => localStorage.getItem(k), KEY);
+      const f = path.join(OUT, 'case.json');
+      fs.writeFileSync(f, text);
+      await pg.setInputFiles('#import-file', f);
+      const visible = await vis(pg.getByText('✕ 無法使用這個備份檔'));
+      const msg = await pg.locator('.import-preview').textContent();
+      const restoreBtn = await pg.getByRole('button', { name: '以此備份還原…' }).count();
+      const after = await pg.evaluate((k) => localStorage.getItem(k), KEY);
+      check(visible && re.test(msg) && restoreBtn === 0 && before === after, `備份「${name}」被拒絕、無還原按鈕、資料未變更`);
+      await pg.getByRole('button', { name: '關閉', exact: true }).click();
+    }
+    await c.close();
+  }
+
+  // localStorage 中為不支援的新版本資料：不覆寫
+  {
+    const { c, pg } = await blank();
+    await pg.goto(URL);
+    const future = JSON.stringify({ version: 99, todos: [], habits: [], checkins: [] });
+    await pg.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, future]);
+    await pg.reload();
+    check(await vis(pg.getByText('無法讀取已儲存的資料')), '瀏覽器內為較新版本資料時顯示救援畫面');
+    check((await pg.evaluate((k) => localStorage.getItem(k), KEY)) === future, '較新版本資料未被覆寫');
+    await c.close();
+  }
 
   await browser.close();
   console.log(failures === 0 ? `\nALL PASSED（截圖：${OUT}）` : `\n${failures} FAILED（截圖：${OUT}）`);

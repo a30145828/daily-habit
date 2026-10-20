@@ -37,6 +37,7 @@ python3 -m http.server 8000    # 本機預覽 http://localhost:8000/（不能用
 
 # 選用：瀏覽器檢查（需 Playwright + Chromium）
 BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs
+# 要模擬 GitHub Pages 的 /daily-habit/ 子路徑：在上一層資料夾啟動伺服器，BASE_URL 改為 http://localhost:8000/daily-habit/
 ```
 
 ## 日期規則（重要）
@@ -46,6 +47,7 @@ BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs
 - 日期鍵格式固定 `YYYY-MM-DD`，可直接字串比較。
 - 測試在檔案開頭設定 `process.env.TZ = 'Asia/Taipei'`，修改日期邏輯時務必保留台灣凌晨與跨午夜的測試。
 - `app.js` 以午夜計時器、每分鐘檢查、`visibilitychange`／`focus` 事件更新「今天」。
+- 手機休眠時計時器可能延遲：會依日期寫入資料的操作（打卡、新增今天到期的待辦）前先呼叫 `checkDateChange()`；若已換日，只更新畫面、不寫入舊日期。
 
 ## 資料格式與相容性（修改時必須遵守）
 
@@ -84,5 +86,7 @@ localStorage key：`daily-habit:data`（另有 `daily-habit:meta` 只存上次�
 - 使用者輸入只能透過 `h()`／`textContent` 顯示；`aria-label` 等屬性用 `setAttribute`。
 - 可重新繪製的按鈕與輸入框要有 `data-focus-key`，讓鍵盤焦點在重繪後留在原處。
 - 狀態不能只用顏色區分，需搭配文字或符號（✓、✕、○ 等）。
+- 手機可點擊區域至少 44×44px（勾選框外層的 `label.todo-check` 提供點擊範圍）。
+- 同一習慣 0.4 秒內的重複點按會被忽略（`CHECKIN_REPEAT_GUARD_MS`），避免連點兩下「打卡又取消」。
 - 不要把使用者資料、備份檔（`daily-habit-backup-*.json`）提交到儲存庫。
 - 修改後至少執行 `npm test`；改到畫面時，盡量用瀏覽器在約 375px 與桌面寬度檢查。
