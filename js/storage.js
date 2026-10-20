@@ -9,6 +9,8 @@ export const STORAGE_KEY = 'daily-habit:data';
 export const CORRUPT_KEY_PREFIX = 'daily-habit:corrupt-';
 export const PRE_MIGRATION_KEY_PREFIX = 'daily-habit:before-v';
 export const ACCOUNT_KEY_PREFIX = 'daily-habit:u:';
+/** 搬到大容量儲存後，localStorage 與新儲存區都被修改時，沒被採用的那份存在這裡（保留鍵，不會自動刪除）。 */
+export const LEGACY_COPY_PREFIX = 'daily-habit:legacy-copy-';
 
 /** 某帳號在這台裝置上的資料快取位置。 */
 export function accountDataKey(userId) {
@@ -131,12 +133,17 @@ export const STORAGE_LIMIT_CHARS = 5_000_000;
 export const STORAGE_WARN_RATIO = 0.7;
 export const STORAGE_DANGER_RATIO = 0.9;
 
+/** 用量比例對應的提醒等級：超過七成 warn、超過九成 danger。 */
+export function storageLevel(ratio) {
+  return ratio >= STORAGE_DANGER_RATIO ? 'danger' : ratio >= STORAGE_WARN_RATIO ? 'warn' : 'ok';
+}
+
 /** 依位置名稱分類：current 目前使用中、local 本機模式、account 帳號快取與同步狀態、preserved 保留的原始資料、app 本工具其他設定、other 同網址的其他網站。 */
 export function storageKind(key, currentKey) {
   if (key === currentKey) return 'current';
   if (key === STORAGE_KEY) return 'local';
   if (key.startsWith(ACCOUNT_KEY_PREFIX)) return 'account';
-  if (key.startsWith(PRE_MIGRATION_KEY_PREFIX) || key.startsWith(CORRUPT_KEY_PREFIX)) return 'preserved';
+  if (key.startsWith(PRE_MIGRATION_KEY_PREFIX) || key.startsWith(CORRUPT_KEY_PREFIX) || key.startsWith(LEGACY_COPY_PREFIX)) return 'preserved';
   if (key.startsWith('daily-habit:')) return 'app';
   return 'other';
 }
@@ -161,6 +168,5 @@ export function measureStorage(storage, currentKey = STORAGE_KEY, limit = STORAG
     return null;
   }
   const ratio = used / limit;
-  const level = ratio >= STORAGE_DANGER_RATIO ? 'danger' : ratio >= STORAGE_WARN_RATIO ? 'warn' : 'ok';
-  return { used, limit, ratio, level, kinds };
+  return { used, limit, ratio, level: storageLevel(ratio), kinds };
 }

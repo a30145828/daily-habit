@@ -90,6 +90,7 @@ PY
     export GOTRUE_DB_DRIVER=postgres DATABASE_URL="postgres://supabase_auth_admin:authpw@localhost:$PG_PORT/postgres?sslmode=disable"
     export GOTRUE_SITE_URL="$SITE_URL" GOTRUE_URI_ALLOW_LIST="http://localhost:*/**"
     export GOTRUE_JWT_SECRET="$JWT_SECRET" GOTRUE_JWT_EXP=3600 GOTRUE_JWT_AUD=authenticated GOTRUE_JWT_ADMIN_ROLES=service_role
+    export GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated
     export GOTRUE_DISABLE_SIGNUP=false GOTRUE_EXTERNAL_EMAIL_ENABLED=true GOTRUE_MAILER_AUTOCONFIRM=false
     export GOTRUE_SMTP_HOST=127.0.0.1 GOTRUE_SMTP_PORT="$SMTP_PORT" GOTRUE_SMTP_USER=test GOTRUE_SMTP_PASS=test
     export GOTRUE_SMTP_ADMIN_EMAIL=admin@example.com GOTRUE_SMTP_SENDER_NAME=DailyHabitTest GOTRUE_SMTP_MAX_FREQUENCY=1s

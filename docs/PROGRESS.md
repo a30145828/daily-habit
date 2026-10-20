@@ -235,3 +235,33 @@
 - 同時改善「儲存空間」卡片：
   - 最上方直接列出「已使用（百分比）／剩餘／估計上限」。
   - 各類資料改用較短的名稱，手機上大小不再被擠成直排。
+
+## 部署後：改用大容量儲存（IndexedDB）
+
+- 目標：資料不再受 localStorage 約 5 MB（同網址所有網站共用）的限制。
+- 做法：
+  - `js/kv-store.js`（可測試的純邏輯）：在 IndexedDB 外面包一層與 localStorage 相同的同步介面（`getItem`、`setItem`、`removeItem`、`key`、`length`）。內容放在記憶體，寫入在背景完成，所以其他程式（儲存、同步、救援、用量計算）都不用改。
+  - 背景寫入失敗時，還原成上次成功保存的內容，畫面重新讀取並顯示「最近的變更沒有保存」。
+  - `js/ui/idb-storage.js`：開啟 IndexedDB；第一次開啟時把 localStorage 中本工具的資料複製過去（原本的內容保留不動）；用 BroadcastChannel 通知其他分頁；IndexedDB 無法使用時改用 localStorage。
+  - 搬移後如果舊版網頁又修改了 localStorage（例如發布時還開著舊分頁）：
+    - 只有舊版改過：採用舊版的修改。
+    - 兩邊都改過：資料採用 `savedAt` 較新的那份，另一份另存為 `daily-habit:legacy-copy-…`（不會刪除），並提示使用者。
+    - 登入狀態等設定兩邊都改過：以新儲存區為準。
+  - 登出刪除帳號快取時，也一併刪除舊 localStorage 中的那份與登入資訊。
+  - 設定頁「儲存空間」顯示儲存方式；大容量儲存時，已使用／剩餘／上限使用瀏覽器回報的數字（`navigator.storage.estimate()`，含離線快取）。
+  - 修正本機測試環境 `scripts/dev/local-supabase.sh`：補上 `GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated`（原本新註冊的測試帳號沒有角色，雲端測試會失敗；正式 Supabase 不受影響）。
+- 已實測：
+  - `npm test`：141 項通過（新增 18 項：同步介面、合併寫入、失敗還原、跨分頁更新、刪除時一併刪除舊的那份、搬移的各種情況）。
+  - `scripts/browser-check.cjs`：293 項通過，新增 `storage` 群組 59 項：
+    - 第一版格式的 localStorage 資料搬移後照常顯示、原本的內容不變、只搬本工具的資料、之後不再寫入舊儲存區。
+    - 模擬舊版網頁在搬移後修改資料：採用較新的版本、另一份另存、不重複另存。
+    - 新增後立即重新整理資料仍在；兩個分頁雙向即時同步。
+    - IndexedDB 寫入失敗（模擬空間已滿）會顯示訊息並還原；資料損壞進入救援畫面且原始內容不被覆寫。
+    - 模擬瀏覽器回報 1.5 MB／120 GB、75%、95% 時的卡片與提醒。
+    - 無法使用 IndexedDB 時改用 localStorage，原本的用量提醒與寫入失敗處理照常。
+    - 只有 localStorage 被封鎖時改用 IndexedDB；兩者都無法使用時顯示警告。
+  - `scripts/cloud-check.cjs`：57 項通過（本機 Supabase 相容環境，含兩台裝置同步、登出清除、權杖更新、安裝版離線同步）。
+- 尚未驗證：實體 iPhone Safari、Android、Firefox 上的 IndexedDB 行為與回報的上限；正式網站上從舊版搬移（要合併後由使用者開啟確認）。
+- 已知限制：
+  - 若之後把網站退回這個版本以前的程式，舊程式只會讀 localStorage，看到的是搬移當時的資料（新的資料仍在 IndexedDB，沒有遺失；再部署新版即可恢復）。
+  - 瀏覽器在空間不足時仍可能清除網站資料；建議定期匯出備份。

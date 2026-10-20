@@ -1,7 +1,7 @@
 // 瀏覽器端到端檢查（選用）。需要已安裝 Playwright 與 Chromium。
 // 用法：先啟動本機伺服器，再執行
 //   BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs [截圖輸出資料夾] [群組…]
-// 群組：general tasks habits review finance game pwa（不指定時全部執行）。
+// 群組：general storage tasks habits review finance game pwa（不指定時全部執行）。
 // 每個情境都使用全新的瀏覽器資料，並把時間固定在台灣 2026-10-20（二）10:00，不會動到你平常使用的資料。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -14,6 +14,8 @@ fs.mkdirSync(OUT, { recursive: true });
 const URL = process.env.BASE_URL || 'http://localhost:8000/';
 const KEY = 'daily-habit:data';
 const START = new Date('2026-10-20T02:00:00Z'); // 台灣 2026-10-20（二）10:00
+
+const { TEST_STORE, storeGet, storeSet, storeKeys } = require('./lib/test-store.cjs');
 
 let failures = 0;
 let passes = 0;
@@ -40,7 +42,7 @@ async function vis(loc, timeout = 3000) {
 }
 
 /** 建立全新的瀏覽器情境。 */
-async function open(browser, { mobile = true, time = START, hash = '' } = {}) {
+async function open(browser, { mobile = true, time = START, hash = '', noIndexedDb = false, estimate = null, seed = null } = {}) {
   const ctx = await browser.newContext({
     viewport: mobile ? { width: 375, height: 812 } : { width: 1280, height: 900 },
     isMobile: mobile,
@@ -49,6 +51,9 @@ async function open(browser, { mobile = true, time = START, hash = '' } = {}) {
     locale: 'zh-TW',
     acceptDownloads: true,
   });
+  await ctx.addInitScript(TEST_STORE);
+  if (noIndexedDb) await ctx.addInitScript(() => Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true }));
+  if (estimate) await ctx.addInitScript((e) => (navigator.storage.estimate = async () => e), estimate);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -60,9 +65,14 @@ async function open(browser, { mobile = true, time = START, hash = '' } = {}) {
     d.dismiss();
   });
   if (time) await page.clock.install({ time });
+  if (seed) {
+    // 模擬舊版：網站開啟前，localStorage 已經有資料
+    await page.goto(new globalThis.URL('manifest.webmanifest', URL).href);
+    await page.evaluate((entries) => Object.entries(entries).forEach(([k, v]) => localStorage.setItem(k, v)), seed);
+  }
   await page.goto(URL + hash);
   await page.waitForSelector('.view:not([hidden]) h2');
-  const read = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), KEY);
+  const read = async () => JSON.parse(await storeGet(page, KEY));
   const go = async (view) => {
     await page.evaluate((v) => (location.hash = v), `#${view}`);
     await page.waitForSelector(`#view-${view}:not([hidden]) h2`);
@@ -355,14 +365,14 @@ async function suiteHabits(browser) {
   await page.locator('#form-dialog').getByRole('button', { name: '關閉', exact: true }).click();
 
   // 把建立日改早，模擬已使用一段時間（補登過去）
-  await page.evaluate((k) => {
-    const data = JSON.parse(localStorage.getItem(k));
+  {
+    const data = await t.read();
     for (const h of data.habits) {
       h.createdDate = '2026-10-01';
       h.schedules[0].from = '2026-10-01';
     }
-    localStorage.setItem(k, JSON.stringify(data));
-  }, KEY);
+    await storeSet(page, KEY, JSON.stringify(data));
+  }
   await page.reload();
   await page.waitForSelector('#view-habits h2');
   await page.getByRole('button', { name: '「喝水」的月份紀錄與補登' }).click();
@@ -807,7 +817,7 @@ async function suiteGameMigration(browser) {
     habits: [{ id: 'h_old1', name: '舊習慣', createdDate: '2026-10-10', archived: false, archivedDate: null, createdAt: '2026-10-10T00:00:00.000Z', updatedAt: '2026-10-10T00:00:00.000Z' }],
     checkins: [{ habitId: 'h_old1', date: '2026-10-18', createdAt: null }],
   };
-  await page.evaluate((d) => localStorage.setItem('daily-habit:data', JSON.stringify(d)), v1);
+  await storeSet(page, KEY, JSON.stringify(v1));
   await page.reload();
   await page.waitForSelector('#view-growth h2');
   await page.waitForTimeout(150);
@@ -856,44 +866,6 @@ async function suiteGeneral(browser) {
       check(statusText === '', '未設定雲端時不顯示同步狀態');
     }
     check(t.errors.length === 0, `無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
-    await t.ctx.close();
-  }
-
-  // 儲存空間用量：設定頁顯示用量；超過七成、九成時在畫面上方提醒
-  {
-    const t = await open(browser);
-    const { page } = t;
-    await t.go('settings');
-    const storageCard = page.locator('section[aria-labelledby=settings-storage]');
-    const summary = await storageCard.locator('.storage-summary').innerText();
-    check(/已使用\s+(約 \d+ KB|不到 1 KB)（(不到 1%|\d+%)）/.test(summary) && /剩餘\s+約 [\d.]+ MB/.test(summary) && /估計上限\s+約 5 MB/.test(summary), `設定頁顯示已使用、剩餘與上限（${summary.replace(/\s+/g, ' ')}）`);
-    check((await storageCard.locator('progress').getAttribute('aria-label'))?.startsWith('儲存空間已使用'), '用量進度條有文字標籤');
-    check((await storageCard.locator('[data-storage-level]').innerText()).includes('空間充足'), '用量少時顯示空間充足（不只靠顏色）');
-    check((await page.locator('#notices').innerText()).includes('儲存空間') === false, '用量少時不顯示提醒');
-    const dataBefore = await page.evaluate(() => localStorage.getItem('daily-habit:data'));
-
-    // 模擬同網址其他網站佔用空間
-    await page.evaluate(() => localStorage.setItem('other-site:big', 'x'.repeat(3_600_000)));
-    await page.reload();
-    await page.waitForSelector('#view-settings h2');
-    const warn = page.locator('#notices .notice--warning', { hasText: '儲存空間已使用約' });
-    check(await vis(warn), '用量超過七成時畫面上方提醒');
-    check((await storageCard.locator('[data-storage-level]').innerText()).includes('已使用超過七成'), '設定頁顯示超過七成的說明');
-    check(/剩餘\s+約 1\.\d MB/.test(await storageCard.locator('.storage-summary').innerText()), '用量七成多時剩餘約 1 MB 多');
-    check(await vis(storageCard.getByText('同網址的其他網站')), '用量明細列出其他網站佔用的空間');
-    await t.go('today');
-    await warn.getByRole('button', { name: '前往設定' }).click();
-    await page.waitForSelector('#view-settings:not([hidden]) h2');
-    check(page.url().endsWith('#settings'), '提醒中的「前往設定」會開啟設定頁');
-
-    await page.evaluate(() => localStorage.setItem('other-site:big', 'x'.repeat(4_600_000)));
-    await page.reload();
-    await page.waitForSelector('#view-settings h2');
-    check(await vis(page.locator('#notices .notice--error', { hasText: '空間快滿了' })), '用量超過九成時顯示錯誤等級提醒');
-    check((await storageCard.locator('[data-storage-level]').innerText()).includes('空間快滿了'), '設定頁顯示快滿的說明');
-    check((await page.evaluate(() => localStorage.getItem('daily-habit:data'))) === dataBefore, '計算用量不會修改使用者資料');
-    await page.evaluate(() => localStorage.removeItem('other-site:big'));
-    check(t.errors.length === 0, `儲存空間檢查無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
     await t.ctx.close();
   }
 
@@ -1030,56 +1002,243 @@ async function suiteGeneral(browser) {
       ['重複識別碼', JSON.stringify({ ...backup, data: { ...backup.data, habits: [backup.data.habits[0], backup.data.habits[0]] } }), /重複/],
     ];
     for (const [name, text, re] of cases) {
-      const before = await page.evaluate((k) => localStorage.getItem(k), KEY);
+      const before = await storeGet(page, KEY);
       const file = path.join(OUT, 'bad.json');
       fs.writeFileSync(file, text);
       await page.setInputFiles('#import-file', file);
       const shown = await vis(page.getByText('✕ 無法使用這個備份檔'));
       const message = await page.locator('.import-preview').innerText();
-      const after = await page.evaluate((k) => localStorage.getItem(k), KEY);
+      const after = await storeGet(page, KEY);
       check(shown && re.test(message) && before === after && (await page.getByRole('button', { name: '以此備份還原…' }).count()) === 0, `無效備份（${name}）被拒絕，資料未變更`);
       await page.getByRole('button', { name: '關閉', exact: true }).click();
     }
     await t.ctx.close();
   }
+}
 
-  // 儲存失敗、資料損壞、無法使用 localStorage
+// ===================== 儲存：大容量儲存、搬移、跨分頁、失敗處理 =====================
+
+const legacyValue = (page, key) => page.evaluate((k) => localStorage.getItem(k), key);
+const storageCardOf = (page) => page.locator('section[aria-labelledby=settings-storage]');
+/** 任務頁切換到「全部」，並等待列表出現。 */
+async function showAllTasks(page) {
+  await page.waitForSelector('#view-tasks:not([hidden]) h2');
+  await page.locator('#view-tasks .segmented label', { hasText: '全部' }).first().click();
+}
+
+async function suiteStorage(browser) {
+  // 既有的 localStorage 資料（第一版格式）搬到大容量儲存，原本的內容不動
+  {
+    const v1 = JSON.stringify({
+      version: 1,
+      savedAt: '2026-10-19T00:00:00.000Z',
+      todos: [{ id: 't_keep1', title: '搬移前的任務', note: '', dueDate: null, priority: 'low', done: false, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', completedAt: null }],
+      habits: [],
+      checkins: [],
+    });
+    const t = await open(browser, { hash: '#tasks', seed: { [KEY]: v1, 'other-site:x': 'not ours' } });
+    const { page } = t;
+    await showAllTasks(page);
+    check(await page.evaluate(() => window.dailyHabitStorage?.backend) === 'indexeddb', '支援的瀏覽器改用大容量儲存（IndexedDB）');
+    check(await vis(page.locator('.todo-title', { hasText: '搬移前的任務' })), '原本 localStorage 的資料搬移後照常顯示');
+    check(await vis(page.getByText('資料已搬到容量較大的儲存區')), '搬移時告知使用者，並說明原本的資料仍保留');
+    const keys = await storeKeys(page);
+    check(keys.includes(KEY) && keys.includes('daily-habit:before-v1') && !keys.includes('other-site:x'), `只搬移本工具的資料（${keys.join(', ')}）`);
+    check((await t.read()).version === 2, '搬移後照常升級為版本 2');
+    check((await legacyValue(page, KEY)) === v1, '舊的儲存區（localStorage）內容原封不動');
+    check((await legacyValue(page, 'daily-habit:before-v1')) === null, '之後的寫入不再寫到舊的儲存區');
+    check((await legacyValue(page, 'daily-habit:storage-backend')) === 'indexeddb', '記錄這台裝置已改用大容量儲存');
+
+    await addTask(t, { title: '搬移後新增' });
+    await page.reload();
+    await showAllTasks(page);
+    check(await vis(page.locator('.todo-title', { hasText: '搬移後新增' })), '大容量儲存的資料重新整理後仍在');
+    check(!(await vis(page.getByText('資料已搬到容量較大的儲存區'), 500)), '搬移只進行一次，不再重複提示');
+    check((await legacyValue(page, KEY)) === v1, '新增資料後舊的儲存區仍不變');
+
+    await t.go('settings');
+    const card = storageCardOf(page);
+    check(await vis(card.getByText('大容量儲存（IndexedDB）')), '儲存空間卡片顯示目前的儲存方式');
+    check(await vis(card.getByText(/舊的儲存區（localStorage）仍原封不動保留搬移前的資料/)), '儲存空間卡片說明舊的資料仍保留');
+
+    // 模擬還開著的舊版網頁在搬移後修改了 localStorage（時間較新），同時新版也有修改
+    const current = await t.read();
+    const fromOldPage = { ...current, savedAt: '2099-01-01T00:00:00.000Z', tasks: [...current.tasks, { ...current.tasks[0], id: 't_oldpage', title: '舊版網頁新增' }] };
+    await page.evaluate(([k, v]) => localStorage.setItem(k, v), [KEY, JSON.stringify(fromOldPage)]);
+    await t.go('tasks');
+    await showAllTasks(page);
+    await addTask(t, { title: '只在新版' });
+    await page.reload();
+    await showAllTasks(page);
+    check(await vis(page.locator('.todo-title', { hasText: '舊版網頁新增' })), '舊版網頁的修改比較新時採用舊版網頁的內容');
+    check(await vis(page.getByText('偵測到舊版網頁在資料搬移後又修改了資料')), '兩邊都被修改時提示使用者');
+    const copies = (await storeKeys(page)).filter((k) => k.startsWith('daily-habit:legacy-copy-'));
+    const copy = copies.length ? await storeGet(page, copies[0]) : '';
+    check(copies.length === 1 && copy.includes('只在新版'), '沒被採用的版本另存，不會刪除');
+    await page.reload();
+    await showAllTasks(page);
+    check((await storeKeys(page)).filter((k) => k.startsWith('daily-habit:legacy-copy-')).length === 1, '重新整理不會重複另存');
+    check(t.errors.length === 0, `搬移無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
+  // 新增後立即重新整理、其他分頁同步
   {
     const t = await open(browser, { hash: '#tasks' });
     const { page } = t;
+    await showAllTasks(page);
+    await addTask(t, { title: '立即重新整理' });
+    await page.reload();
+    await showAllTasks(page);
+    check(await vis(page.locator('.todo-title', { hasText: '立即重新整理' })), '新增後立即重新整理，資料仍在');
+
+    const other = await t.ctx.newPage();
+    await other.goto(`${URL}#tasks`);
+    await showAllTasks(other);
+    await addTask(t, { title: '分頁一新增' });
+    check(await vis(other.locator('.todo-title', { hasText: '分頁一新增' }), 5000), '另一個分頁不必重新整理就看到變更');
+    check(await vis(other.getByText('已同步其他分頁的變更')), '另一個分頁顯示已同步的提示');
+    await other.getByRole('button', { name: '＋ 新增任務' }).click();
+    await other.fill('#task-title', '分頁二新增');
+    await other.locator('#form-dialog').getByRole('button', { name: '儲存', exact: true }).click();
+    check(await vis(page.locator('.todo-title', { hasText: '分頁二新增' }), 5000), '反方向的變更也會同步');
+    check(t.errors.length === 0, `跨分頁無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
+  // 寫入失敗、資料損壞（大容量儲存）
+  {
+    const t = await open(browser, { hash: '#tasks' });
+    const { page } = t;
+    await showAllTasks(page);
     await addTask(t, { title: '已存在的任務' });
     await page.evaluate(() => {
-      Storage.prototype.setItem = function () {
-        const e = new Error('full');
-        e.name = 'QuotaExceededError';
-        throw e;
+      window.__put = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function () {
+        throw new DOMException('full', 'QuotaExceededError');
       };
     });
     await addTask(t, { title: '存不進去' });
-    check(await vis(page.getByText('瀏覽器儲存空間已滿')), '儲存失敗時顯示明確訊息');
-    check(!(await vis(page.locator('.todo-title', { hasText: '存不進去' }), 500)), '儲存失敗時不套用變更');
+    check(await vis(page.getByText('瀏覽器儲存空間已滿，最近的變更沒有保存')), '大容量儲存寫入失敗時顯示明確訊息');
+    check(await gone(page.locator('.todo-title', { hasText: '存不進去' })), '寫入失敗的變更會還原，不留在畫面上');
+    check(await vis(page.locator('.todo-title', { hasText: '已存在的任務' })), '寫入失敗不影響已保存的資料');
+    await page.evaluate(() => (IDBObjectStore.prototype.put = window.__put));
+    await addTask(t, { title: '恢復後新增' });
     await page.reload();
-    await page.waitForSelector('#view-tasks h2');
-    await page.evaluate((k) => localStorage.setItem(k, '{"version":2,"tasks":[{"id":'), KEY);
+    await showAllTasks(page);
+    check((await vis(page.locator('.todo-title', { hasText: '恢復後新增' }))) && !(await vis(page.locator('.todo-title', { hasText: '存不進去' }), 300)), '恢復後可以正常保存');
+
+    await storeSet(page, KEY, '{"version":2,"tasks":[{"id":');
     await page.reload();
     check(await vis(page.getByText('無法讀取已儲存的資料')), '資料損壞時顯示救援畫面');
-    check((await page.evaluate((k) => localStorage.getItem(k), KEY)) === '{"version":2,"tasks":[{"id":', '損壞的資料沒有被覆寫');
+    check((await storeGet(page, KEY)) === '{"version":2,"tasks":[{"id":', '損壞的資料沒有被覆寫');
     await page.getByRole('button', { name: '改用空白資料開始…' }).click();
     await t.confirmOk();
     await page.waitForTimeout(150);
-    const keys = await page.evaluate(() => Object.keys(localStorage));
-    check(keys.some((k) => k.startsWith('daily-habit:corrupt-')), '改用空白資料前另存了損壞的原始內容');
+    check((await storeKeys(page)).some((k) => k.startsWith('daily-habit:corrupt-')), '改用空白資料前另存了損壞的原始內容');
     await t.ctx.close();
   }
+
+  // 儲存空間卡片（大容量儲存）：顯示瀏覽器回報的上限；用量多時提醒
   {
+    const t = await open(browser, { hash: '#settings', estimate: { usage: 1_500_000, quota: 120_000_000_000 } });
+    const { page } = t;
+    const card = storageCardOf(page);
+    const summary = (await card.locator('.storage-summary').innerText()).replace(/\s+/g, ' ');
+    check(/儲存方式 大容量儲存（IndexedDB）/.test(summary) && /已使用 約 1\.5 MB（不到 1%）/.test(summary) && /剩餘 約 120\.0 GB/.test(summary) && /上限 約 120\.0 GB/.test(summary), `大容量儲存顯示已使用、剩餘與上限（${summary}）`);
+    check((await card.locator('progress').getAttribute('aria-label'))?.startsWith('儲存空間已使用'), '用量進度條有文字標籤');
+    check((await card.locator('[data-storage-level]').innerText()).includes('空間充足'), '用量少時顯示空間充足');
+    check(!(await page.locator('#notices').innerText()).includes('儲存空間已使用'), '用量少時不顯示提醒');
+    await t.ctx.close();
+  }
+  for (const [usage, level, text, notice] of [
+    [75_000_000, 'warn', '清出裝置的儲存空間', '.notice--warning'],
+    [95_000_000, 'danger', '空間快滿了', '.notice--error'],
+  ]) {
+    const t = await open(browser, { hash: '#settings', estimate: { usage, quota: 100_000_000 } });
+    const { page } = t;
+    check(await vis(page.locator(`#notices ${notice}`, { hasText: '儲存空間已使用約' })), `大容量儲存用量 ${usage / 1_000_000}% 時畫面上方提醒`);
+    check((await storageCardOf(page).locator(`[data-storage-level=${level}]`).innerText()).includes(text), `大容量儲存用量 ${usage / 1_000_000}% 時設定頁說明`);
+    await t.ctx.close();
+  }
+
+  // 瀏覽器無法使用大容量儲存：改用 localStorage，所有功能照常
+  {
+    const t = await open(browser, { hash: '#tasks', noIndexedDb: true });
+    const { page } = t;
+    await showAllTasks(page);
+    check(await page.evaluate(() => window.dailyHabitStorage?.backend) === 'localstorage', '無法使用大容量儲存時改用 localStorage');
+    await addTask(t, { title: '基本儲存的任務' });
+    await page.reload();
+    await showAllTasks(page);
+    check(await vis(page.locator('.todo-title', { hasText: '基本儲存的任務' })) && (await legacyValue(page, KEY)).includes('基本儲存的任務'), '基本儲存：資料存在 localStorage，重新整理後仍在');
+
+    await t.go('settings');
+    const card = storageCardOf(page);
+    const summary = await card.locator('.storage-summary').innerText();
+    check(/基本儲存（localStorage，約 5 MB）/.test(summary) && /已使用\s+約 \d+ KB（(不到 1%|\d+%)）/.test(summary) && /剩餘\s+約 [\d.]+ MB/.test(summary) && /估計上限\s+約 5\.0 MB/.test(summary), `基本儲存顯示已使用、剩餘與估計上限（${summary.replace(/\s+/g, ' ')}）`);
+    check(await vis(card.getByText('這個瀏覽器目前無法使用大容量儲存')), '基本儲存時說明原因');
+    check((await card.locator('[data-storage-level]').innerText()).includes('空間充足'), '用量少時顯示空間充足（不只靠顏色）');
+    const dataBefore = await legacyValue(page, KEY);
+
+    // 模擬同網址其他網站佔用空間
+    await page.evaluate(() => localStorage.setItem('other-site:big', 'x'.repeat(3_600_000)));
+    await page.reload();
+    await page.waitForSelector('#view-settings h2');
+    const warn = page.locator('#notices .notice--warning', { hasText: '儲存空間已使用約' });
+    check(await vis(warn), '用量超過七成時畫面上方提醒');
+    check((await card.locator('[data-storage-level]').innerText()).includes('已使用超過七成'), '設定頁顯示超過七成的說明');
+    check(/剩餘\s+約 1\.\d MB/.test(await card.locator('.storage-summary').innerText()), '用量七成多時剩餘約 1 MB 多');
+    check(await vis(card.getByText('同網址的其他網站')), '用量明細列出其他網站佔用的空間');
+    await t.go('today');
+    await warn.getByRole('button', { name: '前往設定' }).click();
+    await page.waitForSelector('#view-settings:not([hidden]) h2');
+    check(page.url().endsWith('#settings'), '提醒中的「前往設定」會開啟設定頁');
+    await page.evaluate(() => localStorage.setItem('other-site:big', 'x'.repeat(4_600_000)));
+    await page.reload();
+    await page.waitForSelector('#view-settings h2');
+    check(await vis(page.locator('#notices .notice--error', { hasText: '空間快滿了' })), '用量超過九成時顯示錯誤等級提醒');
+    check((await card.locator('[data-storage-level]').innerText()).includes('空間快滿了'), '設定頁顯示快滿的說明');
+    check((await legacyValue(page, KEY)) === dataBefore, '計算用量不會修改使用者資料');
+    await page.evaluate(() => localStorage.removeItem('other-site:big'));
+
+    // 基本儲存寫入失敗
+    await t.go('tasks');
+    await page.evaluate(() => {
+      Storage.prototype.setItem = function () {
+        throw new DOMException('full', 'QuotaExceededError');
+      };
+    });
+    await addTask(t, { title: '存不進去' });
+    check(await vis(page.getByText('瀏覽器儲存空間已滿')), '基本儲存寫入失敗時顯示明確訊息');
+    check(!(await vis(page.locator('.todo-title', { hasText: '存不進去' }), 500)), '基本儲存寫入失敗時不套用變更');
+    check(t.errors.length === 0, `基本儲存無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
+  // 只有 localStorage 被封鎖：大容量儲存仍可使用；兩者都無法使用時才警告
+  for (const both of [false, true]) {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
     await ctx.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('denied', 'SecurityError'); } }));
+    if (both) await ctx.addInitScript(() => Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true }));
     const page = await ctx.newPage();
     const errs = [];
     page.on('pageerror', (e) => errs.push(String(e)));
     await page.goto(URL);
-    check(await vis(page.getByText('瀏覽器目前不允許儲存資料')), '無法使用 localStorage 時顯示警告，仍可暫時使用');
-    check(errs.length === 0, `無法儲存時沒有 JavaScript 錯誤 ${errs.join(' | ')}`);
+    await page.waitForSelector('#view-today h2');
+    if (both) {
+      check(await vis(page.getByText('瀏覽器目前不允許儲存資料')), '兩種儲存都無法使用時顯示警告，仍可暫時使用');
+    } else {
+      check(!(await vis(page.getByText('瀏覽器目前不允許儲存資料'), 500)), 'localStorage 被封鎖時改用大容量儲存，不顯示警告');
+      await page.evaluate(() => (location.hash = '#tasks'));
+      await page.getByRole('button', { name: '＋ 新增任務' }).click();
+      await page.fill('#task-title', '封鎖 localStorage 時新增');
+      await page.locator('#form-dialog').getByRole('button', { name: '儲存', exact: true }).click();
+      await page.reload();
+      await showAllTasks(page);
+      check(await vis(page.locator('.todo-title', { hasText: '封鎖 localStorage 時新增' })), 'localStorage 被封鎖時資料仍可保存');
+    }
+    check(errs.length === 0, `儲存受限時沒有 JavaScript 錯誤 ${errs.join(' | ')}`);
     await ctx.close();
   }
 }
@@ -1088,6 +1247,7 @@ async function suiteGeneral(browser) {
 
 async function suitePwa(browser) {
   const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, timezoneId: 'Asia/Taipei' });
+  await ctx.addInitScript(TEST_STORE);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -1118,7 +1278,7 @@ async function suitePwa(browser) {
   await page.getByRole('button', { name: '＋ 新增任務' }).click();
   await page.fill('#task-title', '離線新增的任務');
   await page.locator('#form-dialog').getByRole('button', { name: '儲存', exact: true }).click();
-  const saved = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).tasks.map((t) => t.title), KEY);
+  const saved = JSON.parse(await storeGet(page, KEY)).tasks.map((t) => t.title);
   check(saved.includes('離線新增的任務'), '離線時新增的資料保存在裝置上');
   await page.reload();
   await page.waitForSelector('#view-tasks h2');
@@ -1138,6 +1298,7 @@ const SUITES = {
   review: [suiteReview],
   finance: [suiteFinance, suiteSubscriptions, suiteCsv],
   game: [suiteGame, suiteGameMigration],
+  storage: [suiteStorage],
   pwa: [suitePwa],
 };
 

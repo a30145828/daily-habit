@@ -24,13 +24,14 @@
 | `js/ui/account-view.js` | 帳號、同步排程、狀態列、衝突、本機資料匯入 |
 | `js/ui/game-view.js` | 遊戲化畫面；在 `app.transforms` 登記獎勵結算 |
 | 邏輯模組 `js/*.js`、`js/cloud/*.js` | 純函式，**不可存取 DOM 或 window**（`storage.js` 接收 storage 參數），以便 `node --test` |
+| `js/kv-store.js`、`js/ui/idb-storage.js` | 大容量儲存：IndexedDB 外包一層與 localStorage 相同的同步介面（`app.storage`），寫入在背景完成；無法使用時改用 localStorage |
 | `supabase/migrations/*.sql` | 資料表、RLS、`sync_push` 函式（可重複執行） |
 | `supabase/tests/rls_test.sql` | 權限與同步規則測試（交易內執行並 rollback） |
 | `manifest.webmanifest`、`sw.js`、`icons/`、`js/ui/pwa-view.js` | 安裝到主畫面與離線快取 |
-| `scripts/browser-check.cjs` | 本機功能的 Playwright 檢查（群組：general tasks habits review finance game pwa） |
+| `scripts/browser-check.cjs` | 本機功能的 Playwright 檢查（群組：general storage tasks habits review finance game pwa）；`scripts/lib/test-store.cjs` 讀寫實際使用的儲存區 |
 | `scripts/cloud-check.cjs`、`scripts/dev/` | 雲端同步檢查與本機 Supabase 相容環境 |
 
-資料流程：畫面呼叫 `commit(nextData)` → 依序套用 `app.transforms`（例如遊戲化結算）→ `app.persist`（寫入 localStorage；登入時另外比對差異、加入同步佇列）→ 成功才更新 `app.data` 並重新繪製。寫入失敗時不套用變更。
+資料流程：畫面呼叫 `commit(nextData)` → 依序套用 `app.transforms`（例如遊戲化結算）→ `app.persist`（寫入 `app.storage`；登入時另外比對差異、加入同步佇列）→ 成功才更新 `app.data` 並重新繪製。寫入失敗時不套用變更；大容量儲存在背景寫入失敗時，會還原成上次成功保存的內容並顯示訊息。
 
 ## 指令
 
@@ -54,7 +55,8 @@ psql -h localhost -p 54322 -U postgres -v ON_ERROR_STOP=1 -f supabase/tests/rls_
 
 ## 資料格式與相容性（修改時必須遵守）
 
-- 版本 2，集合定義與欄位驗證在 `js/schema.js`（`SPECS`）。本機位置 `daily-habit:data`；帳號快取 `daily-habit:u:<userId>:data`、同步狀態 `…:sync`；登入 `daily-habit:session`。保留鍵 `daily-habit:before-v*`、`daily-habit:corrupt-*` 不可自動刪除。
+- 版本 2，集合定義與欄位驗證在 `js/schema.js`（`SPECS`）。本機位置 `daily-habit:data`；帳號快取 `daily-habit:u:<userId>:data`、同步狀態 `…:sync`；登入 `daily-habit:session`。保留鍵 `daily-habit:before-v*`、`daily-habit:corrupt-*`、`daily-habit:legacy-copy-*` 不可自動刪除。
+- 這些鍵存在 IndexedDB（資料庫 `daily-habit`，`kv` 存放內容、`meta` 存放搬移紀錄）；所有程式只透過 `app.storage` 讀寫，不直接使用 localStorage。舊 localStorage 的內容第一次開啟時複製過去並**保留不動**（只有登出刪除帳號快取時一併刪除舊的那份）；搬移後若 localStorage 又被舊版網頁修改，依 `planMigration` 規則處理，不可無聲覆蓋。
 - 備份檔：`{ app: 'daily-habit', version, exportedAt, data }`；所有舊版本備份都必須能還原（`MIGRATIONS`），比程式新的版本要拒絕。
 - 改格式時：`CURRENT_VERSION` 加 1、在 `MIGRATIONS` 加轉換（不可刪舊的）、更新 `SPECS`、新增「舊 localStorage 與舊備份可轉換」的測試；`storage.js` 會先把舊原始資料另存。雲端資料（`records.data`）同樣需要能被新版 `validateRecord` 讀取。
 - **不可以清空或覆蓋使用者資料作為修復方式。** 讀取失敗進入救援畫面；離開前先另存原始內容。

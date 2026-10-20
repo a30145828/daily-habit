@@ -112,12 +112,16 @@ python3 -m http.server 8000
 
 | 模式 | 資料位置 | 跨裝置 |
 | --- | --- | --- |
-| 本機模式（未登入） | 這個瀏覽器的 localStorage（`daily-habit:data`） | 否 |
+| 本機模式（未登入） | 這個瀏覽器的大容量儲存區（IndexedDB，位置 `daily-habit:data`） | 否 |
 | 已登入 | 這個瀏覽器的帳號快取（`daily-habit:u:<帳號>:data`），並同步到你的 Supabase 帳號 | 是 |
+
+- 資料存在瀏覽器的大容量儲存區（IndexedDB），上限由瀏覽器依裝置剩餘空間決定，通常是幾百 MB 以上。
+- 瀏覽器無法使用 IndexedDB 時（少數舊瀏覽器或特殊隱私設定），自動改用基本儲存區（localStorage，約 5 MB，同一個網址下的所有網站共用），功能完全相同。
+- 舊版本存在 localStorage 的資料，會在第一次開啟新版時複製到大容量儲存區；**原本的那份原封不動保留**，不會自動刪除。如果搬移後還開著舊版網頁並修改了資料，會採用較新的版本，另一份另存（`daily-habit:legacy-copy-…`），不會刪除。
 
 - 本機模式下，清除瀏覽器資料、使用無痕視窗、換瀏覽器或裝置，資料都可能消失。iPhone Safari 也可能在網站長期未使用時清除資料。
 - 登出會清除這台裝置上的帳號快取（雲端資料不受影響）。登出前如果有尚未同步的變更，會先警告。
-- 瀏覽器給每個網址的空間約 5 MB，同一個網址（例如 `你的帳號.github.io`）下的所有網站共用。「設定 → 儲存空間」會顯示用量；超過七成時畫面上方會提醒，超過九成時改為錯誤等級的提醒。空間滿了之後新的變更無法保存，但已保存的資料不會被刪除。
+- 「設定 → 儲存空間」會顯示儲存方式、已使用、剩餘與上限；超過七成時畫面上方會提醒，超過九成時改為錯誤等級的提醒。空間滿了之後新的變更無法保存（畫面會還原並顯示訊息），但已保存的資料不會被刪除。
 
 ### 定期備份
 
@@ -276,7 +280,7 @@ BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs finance # 只測�
 - 本機模式下資料不會離開你的瀏覽器。登入後，資料存在你自己的 Supabase 專案，每個帳號只能讀寫自己的資料（資料庫的 Row Level Security）。
 - 網站只使用公開的 anon／publishable 金鑰；不使用、也不需要 service_role 金鑰。
 - 使用者輸入一律以文字顯示，不會被當成 HTML 執行；匯出的 CSV 會防止試算表公式注入。
-- 登入資訊存在瀏覽器的 localStorage（與 Supabase 官方函式庫相同做法）。在共用電腦使用後請登出。
+- 登入資訊存在瀏覽器的儲存區（IndexedDB；無法使用時為 localStorage，與 Supabase 官方函式庫相同做法）。在共用電腦使用後請登出，登出會一併清除新、舊儲存區中的登入資訊與帳號快取。
 - 不要在備註、付款方式等欄位填寫完整卡號、密碼等敏感資料。
 
 ---
@@ -306,7 +310,8 @@ js/config.js               雲端同步的公開設定（預設空白 = 本機�
 js/dates.js                日期工具（當地日期鍵 YYYY-MM-DD、週、月、月底規則）
 js/money.js                金額（最小貨幣單位整數、幣別）
 js/schema.js               資料格式 v2、驗證、版本遷移
-js/storage.js              localStorage 讀寫、損壞與寫入失敗處理
+js/storage.js              資料讀寫（localStorage 介面）、損壞與寫入失敗處理、用量計算
+js/kv-store.js             大容量儲存：同步介面的記憶體快取、背景寫入、從 localStorage 搬移
 js/backup.js               完整備份匯出與驗證
 js/tasks.js                任務：驗證、搜尋、篩選、排序、視圖
 js/recurrence.js           重複任務規則
@@ -319,6 +324,7 @@ js/game.js                 遊戲化：帳本結算、等級、成就、獎勵
 js/sample.js               範例資料
 js/cloud/api.js            Supabase REST 用戶端（不使用外部函式庫）
 js/cloud/sync.js           同步資料處理（佇列、衝突、匯入）
+js/ui/idb-storage.js       開啟 IndexedDB、搬移舊資料、跨分頁通知；無法使用時改用 localStorage
 js/ui/*.js                 各區域的畫面
 supabase/migrations/       資料庫 migration（資料表、RLS、同步函式）
 supabase/tests/            資料權限測試（SQL）

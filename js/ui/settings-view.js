@@ -6,7 +6,7 @@ import { formatTimestamp } from '../dates.js';
 import { downloadText } from '../dom.js';
 import { buildSampleData, mergeSample } from '../sample.js';
 import { COLLECTIONS, CURRENT_VERSION, countData, describeCounts, emptyData, hasUserData } from '../schema.js';
-import { STORAGE_LIMIT_CHARS, measureStorage, preserveCorruptData, saveData } from '../storage.js';
+import { STORAGE_LIMIT_CHARS, measureStorage, preserveCorruptData, saveData, storageLevel } from '../storage.js';
 import {
   addNotice,
   app,
@@ -228,32 +228,84 @@ const STORAGE_KIND_LABELS = {
   current: '目前的資料',
   local: '未登入時的本機資料',
   account: '帳號快取與待同步',
-  preserved: '升級前或損壞時另存',
+  preserved: '另存的原始資料',
   app: '其他設定',
   other: '同網址的其他網站',
 };
 
 const STORAGE_LEVEL_TEXT = {
   ok: '✓ 空間充足。',
-  warn: '⚠ 已使用超過七成。建議先匯出備份，並清除同網址下不需要的其他網站資料。',
+  warn: {
+    localstorage: '⚠ 已使用超過七成。建議先匯出備份，並清除同網址下不需要的其他網站資料。',
+    indexeddb: '⚠ 已使用超過七成。建議先匯出備份，並清出裝置的儲存空間。',
+  },
   danger: '⛔ 空間快滿了：滿了之後新的變更將無法保存。請立即匯出備份。',
 };
 
-/** 以字元數概略換算成 KB／MB（只用於顯示）。 */
-function formatStorageSize(chars) {
-  if (chars < 1000) return '不到 1 KB';
-  if (chars < 1_000_000) return `約 ${Math.round(chars / 1000)} KB`;
-  return `約 ${(chars / 1_000_000).toFixed(1)} MB`;
+const BACKEND_LABELS = {
+  indexeddb: '大容量儲存（IndexedDB）',
+  localstorage: '基本儲存（localStorage，約 5 MB）',
+};
+
+/** 以字元數或位元組概略換算成 KB／MB／GB（只用於顯示）。 */
+function formatStorageSize(size) {
+  if (size < 1000) return '不到 1 KB';
+  if (size < 1_000_000) return `約 ${Math.round(size / 1000)} KB`;
+  if (size < 1_000_000_000) return `約 ${(size / 1_000_000).toFixed(1)} MB`;
+  return `約 ${(size / 1_000_000_000).toFixed(1)} GB`;
+}
+
+/** 向瀏覽器查詢這個網站可用的空間（大容量儲存的上限依裝置剩餘空間而定）。 */
+export async function refreshStorageEstimate() {
+  let estimate = null;
+  try {
+    estimate = await navigator.storage?.estimate?.();
+  } catch {
+    estimate = null;
+  }
+  const valid = estimate && Number.isFinite(estimate.quota) && estimate.quota > 0;
+  app.storageEstimate = { usage: valid ? (estimate.usage ?? 0) : null, quota: valid ? estimate.quota : null, at: Date.now() };
+}
+
+/**
+ * 目前儲存區的用量：{ used, limit（null 表示不知道）, ratio, level, kinds, includesCache }。
+ * 大容量儲存使用瀏覽器回報的數字（位元組，含離線快取）；基本儲存以字元數估算。
+ */
+function storageSummary() {
+  if (app.mode === 'memory' || !app.storage) return null;
+  if (app.storageBackend !== 'indexeddb') {
+    const usage = measureStorage(app.storage, app.storageKey);
+    return usage && { ...usage, includesCache: false };
+  }
+  const own = measureStorage(app.storage, app.storageKey, Infinity);
+  if (!own) return null;
+  const estimate = app.storageEstimate;
+  if (!estimate?.quota) return { ...own, limit: null, ratio: 0, level: 'ok', includesCache: false };
+  const used = Math.max(estimate.usage, own.used);
+  const ratio = used / estimate.quota;
+  return { ...own, used, limit: estimate.quota, ratio, level: storageLevel(ratio), includesCache: true };
 }
 
 function storagePercent(usage) {
   return Math.min(100, Math.round(usage.ratio * 100));
 }
 
+/** 舊的儲存區（localStorage）中，搬移前保留下來的本工具資料大小。 */
+function legacySize() {
+  if (app.storageBackend !== 'indexeddb') return 0;
+  try {
+    const usage = measureStorage(globalThis.localStorage, app.storageKey, Infinity);
+    return usage ? usage.used - usage.kinds.other : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** 啟動時檢查用量；超過七成在畫面上方提醒（由 app.js 呼叫）。 */
-export function checkStorageUsage() {
+export async function checkStorageUsage() {
   if (app.mode === 'memory') return;
-  const usage = measureStorage(app.storage, app.storageKey);
+  if (app.storageBackend === 'indexeddb') await refreshStorageEstimate();
+  const usage = storageSummary();
   if (!usage || usage.level === 'ok') return;
   addNotice(
     `瀏覽器儲存空間已使用約 ${storagePercent(usage)}%。${usage.level === 'danger' ? '空間快滿了，滿了之後新的變更將無法保存，' : ''}請先匯出備份，詳情見「設定 → 儲存空間」。`,
@@ -263,35 +315,49 @@ export function checkStorageUsage() {
 }
 
 function renderStorageUsage() {
-  const usage = app.mode === 'memory' ? null : measureStorage(app.storage, app.storageKey);
+  // 大容量儲存的上限要向瀏覽器查詢：超過 15 秒沒更新就重新查詢，查完重新繪製
+  if (app.storageBackend === 'indexeddb' && !(Date.now() - (app.storageEstimate?.at ?? 0) < 15000)) {
+    app.storageEstimate = { ...app.storageEstimate, at: Date.now() };
+    refreshStorageEstimate().then(() => {
+      if (app.view === 'settings') render();
+    });
+  }
+  const usage = storageSummary();
   if (!usage) {
     return card('settings-storage', '儲存空間', h('p', {}, '瀏覽器目前不允許讀取儲存空間，無法計算用量。'));
   }
   const percent = storagePercent(usage);
   const percentText = usage.used > 0 && percent === 0 ? '不到 1%' : `${percent}%`;
+  const backend = app.storageBackend;
+  const legacy = legacySize();
+  const levelText = usage.level === 'warn' ? STORAGE_LEVEL_TEXT.warn[backend] : STORAGE_LEVEL_TEXT[usage.level];
   return card(
     'settings-storage',
     '儲存空間',
     h(
       'dl',
       { class: 'details storage-summary' },
+      h('dt', {}, '儲存方式'),
+      h('dd', {}, BACKEND_LABELS[backend] ?? '—'),
       h('dt', {}, '已使用'),
-      h('dd', {}, `${formatStorageSize(usage.used)}（${percentText}）`),
+      h('dd', {}, usage.limit ? `${formatStorageSize(usage.used)}（${percentText}）` : formatStorageSize(usage.used)),
       h('dt', {}, '剩餘'),
-      h('dd', {}, formatStorageSize(Math.max(0, usage.limit - usage.used))),
-      h('dt', {}, '估計上限'),
-      h('dd', {}, `約 ${usage.limit / 1_000_000} MB`),
+      h('dd', {}, usage.limit ? formatStorageSize(Math.max(0, usage.limit - usage.used)) : '依裝置剩餘空間而定'),
+      h('dt', {}, backend === 'indexeddb' ? '上限' : '估計上限'),
+      h('dd', {}, usage.limit ? formatStorageSize(usage.limit) : '瀏覽器沒有提供'),
     ),
-    h('progress', {
-      class: `storage-meter is-${usage.level}`,
-      max: '100',
-      value: String(percent),
-      'aria-label': `儲存空間已使用 ${percentText}`,
-    }),
+    usage.limit
+      ? h('progress', {
+          class: `storage-meter is-${usage.level}`,
+          max: '100',
+          value: String(percent),
+          'aria-label': `儲存空間已使用 ${percentText}`,
+        })
+      : null,
     h(
       'p',
       { class: usage.level === 'ok' ? 'small' : `small notice notice--${usage.level === 'danger' ? 'error' : 'warning'}`, 'data-storage-level': usage.level },
-      STORAGE_LEVEL_TEXT[usage.level],
+      levelText,
     ),
     h('h4', { class: 'field-label' }, '各類資料佔用'),
     h(
@@ -304,7 +370,15 @@ function renderStorageUsage() {
     h(
       'ul',
       { class: 'bullets small' },
-      h('li', {}, `上限依瀏覽器不同，這裡以約 ${STORAGE_LIMIT_CHARS / 1_000_000} MB 估算，剩餘空間也是估計值。同一個網址（${location.host || '本機'}）下的所有網站共用這個空間。`),
+      backend === 'indexeddb'
+        ? [
+            h('li', {}, '上限由瀏覽器依這台裝置的剩餘空間決定，裝置空間變少時上限也會變小。「已使用」包含離線快取的網站檔案。'),
+            legacy > 0 ? h('li', {}, `舊的儲存區（localStorage）仍原封不動保留搬移前的資料，${formatStorageSize(legacy)}，不會自動刪除。`) : null,
+          ]
+        : [
+            h('li', {}, `上限依瀏覽器不同，這裡以約 ${STORAGE_LIMIT_CHARS / 1_000_000} MB 估算，剩餘空間也是估計值。同一個網址（${location.host || '本機'}）下的所有網站共用這個空間。`),
+            h('li', {}, '這個瀏覽器目前無法使用大容量儲存，所以使用基本儲存。'),
+          ],
       h('li', {}, '空間不足時，新的變更不會保存，但已經保存的資料不會被刪除。'),
       app.session ? h('li', {}, '你已登入：資料也存在雲端，但這台裝置的空間滿了之後，新的變更無法保存也無法上傳。') : null,
     ),
