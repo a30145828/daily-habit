@@ -1,6 +1,8 @@
 // 離線快取（service worker）：讓網站在沒有網路時也能開啟。
 // 策略：網站本身的檔案「先連網路、失敗才用快取」，所以有網路時永遠拿到最新版，
 // 不需要每次發布都改版本號；離線時使用上次成功下載的版本。
+// 程式與樣式檔一律向伺服器確認是否有新版（cache: 'no-cache'），避免瀏覽器沿用
+// GitHub Pages 約 10 分鐘的暫存，造成剛發布後看不到新功能或新舊檔案混用。
 // 雲端同步（Supabase，不同網域）的請求不經過快取。
 // 新增或改名網站檔案時，請同步更新 APP_SHELL（tests/pwa.test.js 會檢查是否遺漏）。
 
@@ -53,7 +55,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'no-cache' }))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -77,7 +79,7 @@ self.addEventListener('fetch', (event) => {
     (async () => {
       const cache = await caches.open(CACHE);
       try {
-        const response = await fetch(request);
+        const response = await fetch(request.mode === 'navigate' ? request : new Request(request.url, { cache: 'no-cache' }));
         if (response.ok && response.type === 'basic') cache.put(request, response.clone());
         return response;
       } catch (error) {

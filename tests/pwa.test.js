@@ -47,3 +47,9 @@ test('所有路徑都是相對路徑（可部署在 /daily-habit/ 子路徑）',
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.equal(/(src|href)="\//.test(html), false, 'index.html 不可有 / 開頭的路徑');
 });
+
+test('連網路時向伺服器確認新版，不沿用瀏覽器暫存（避免發布後約 10 分鐘看不到新功能）', () => {
+  const source = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.match(source, /cache\.addAll\(APP_SHELL\.map\(\(url\) => new Request\(url, \{ cache: 'no-cache' \}\)\)\)/);
+  assert.match(source, /fetch\(request\.mode === 'navigate' \? request : new Request\(request\.url, \{ cache: 'no-cache' \}\)\)/);
+});
