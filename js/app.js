@@ -20,6 +20,7 @@ import {
   setupDialogs,
   showToast,
 } from './ui/core.js';
+import { renderGrowth } from './ui/growth-view.js';
 import { renderHabits } from './ui/habits-view.js';
 import { renderRecovery, renderSettings } from './ui/settings-view.js';
 import { renderTasks } from './ui/tasks-view.js';
@@ -33,7 +34,7 @@ registerView('today', renderToday);
 registerView('tasks', renderTasks);
 registerView('habits', renderHabits);
 registerView('finance', placeholder('finance', '財務', '個人財務與訂閱中心將在下一階段加入。'));
-registerView('growth', placeholder('growth', '成長', '遊戲化成長將在之後的階段加入。'));
+registerView('growth', renderGrowth);
 registerView('settings', renderSettings);
 registerView('recovery', renderRecovery);
 

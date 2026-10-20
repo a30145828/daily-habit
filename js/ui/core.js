@@ -450,7 +450,7 @@ export function openFormDialog({ title, body, submitText = '儲存', onSubmit, e
       { class: 'dialog-actions' },
       extraActions.map((action) => button(action.label, () => action.onClick(close, form), { variant: action.variant ?? 'ghost' })),
       h('span', { class: 'spacer' }),
-      button('取消', close),
+      button(submitText ? '取消' : '關閉', close),
       submitText ? button(submitText, null, { variant: 'primary', type: 'submit' }) : null,
     ),
   );

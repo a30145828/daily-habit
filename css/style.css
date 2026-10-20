@@ -1397,3 +1397,32 @@ details.method > ul {
 fieldset {
   min-width: 0;
 }
+
+.review-period {
+  margin: 0;
+  font-weight: 700;
+  text-align: center;
+}
+
+.review-habits {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+.review-habits li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-form textarea {
+  margin-bottom: 4px;
+}
+
+.calendar-nav .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
