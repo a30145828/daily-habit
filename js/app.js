@@ -3,7 +3,7 @@
 
 import { msUntilNextMidnight } from './dates.js';
 import { CURRENT_VERSION } from './schema.js';
-import { STORAGE_KEY, getBrowserStorage, loadData, saveData } from './storage.js';
+import { STORAGE_KEY, loadData, saveData } from './storage.js';
 import {
   VIEWS,
   $,
@@ -20,6 +20,7 @@ import {
 import { installAccount } from './ui/account-view.js';
 import { renderFinance } from './ui/finance-view.js';
 import { installGame, settleRewards } from './ui/game-view.js';
+import { openAppStorage } from './ui/idb-storage.js';
 import { renderGrowth } from './ui/growth-view.js';
 import { renderHabits } from './ui/habits-view.js';
 import { installPwa } from './ui/pwa-view.js';
@@ -114,8 +115,8 @@ function setupDateWatch() {
 
 // ---------- 跨分頁 ----------
 
-function handleStorageEvent(event) {
-  if (app.mode === 'memory' || (event.key !== app.storageKey && event.key !== null)) return;
+/** 從儲存區重新讀取目前的資料並重新繪製。 */
+function reloadCurrent(message) {
   const result = loadData(app.storage, new Date(), app.storageKey);
   if (result.status === 'corrupt') {
     app.mode = 'recovery';
@@ -124,9 +125,34 @@ function handleStorageEvent(event) {
     app.mode = 'normal';
     app.corrupt = null;
     app.data = result.data;
-    showToast('已同步其他分頁的變更。');
+    if (message) showToast(message);
   }
   render();
+}
+
+function handleStorageEvent(event) {
+  // 改用大容量儲存後，舊的 localStorage 發出的事件不代表目前的資料
+  if (event.storageArea && event.storageArea !== app.storage) return;
+  if (app.mode === 'memory' || (event.key !== app.storageKey && event.key !== null)) return;
+  reloadCurrent('已同步其他分頁的變更。');
+}
+
+/** 背景寫入失敗：變更已還原成上次成功保存的內容。 */
+function handleWriteError(keys, error) {
+  const quota = error?.name === 'QuotaExceededError';
+  addNotice(
+    quota
+      ? '瀏覽器儲存空間已滿，最近的變更沒有保存。請先匯出備份並清理瀏覽器資料。'
+      : '無法寫入瀏覽器儲存空間，最近的變更沒有保存。請重新整理頁面後再試。',
+    'error',
+    { key: 'storage-write' },
+  );
+  if (app.mode !== 'memory' && keys.includes(app.storageKey)) reloadCurrent();
+}
+
+/** 其他分頁修改了大容量儲存區的資料：轉成與 localStorage 相同的 storage 事件。 */
+function handleExternalChange(key, oldValue, newValue) {
+  window.dispatchEvent(new StorageEvent('storage', { key, oldValue, newValue, url: location.href }));
 }
 
 // ---------- 啟動 ----------
@@ -139,7 +165,10 @@ async function init() {
   if (typeof HTMLDialogElement !== 'function') {
     addNotice('你的瀏覽器版本較舊，對話框可能無法使用，建議更新瀏覽器。', 'error');
   }
-  app.storage = getBrowserStorage();
+  const opened = await openAppStorage({ onError: handleWriteError, onExternalChange: handleExternalChange });
+  app.storage = opened.storage;
+  app.storageBackend = opened.backend;
+  for (const notice of opened.notices) addNotice(notice.text, notice.type, { key: `storage-open-${notice.type}` });
   loadFrom(STORAGE_KEY);
   setupDialogs();
   setupDateWatch();
@@ -150,7 +179,7 @@ async function init() {
   $('boot-message')?.remove();
   render();
   settleRewards();
-  checkStorageUsage();
+  await checkStorageUsage();
 }
 
 init();

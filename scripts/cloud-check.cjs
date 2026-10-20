@@ -8,6 +8,7 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { TEST_STORE, storeGet, storeKeys, storeSet } = require('./lib/test-store.cjs');
 
 const OUT = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'daily-habit-cloud-'));
 fs.mkdirSync(OUT, { recursive: true });
@@ -61,6 +62,7 @@ async function device(browser, name, { mobile = true } = {}) {
     // 以攔截 config.js 的方式指定測試環境；service worker 的請求不一定經過攔截，因此這裡關閉。
     serviceWorkers: 'block',
   });
+  await ctx.addInitScript(TEST_STORE);
   await ctx.route('**/js/config.js', (route) =>
     route.fulfill({ contentType: 'text/javascript', body: `export const SUPABASE_URL = ${JSON.stringify(SB_URL)};\nexport const SUPABASE_ANON_KEY = ${JSON.stringify(SB_KEY)};\n` }),
   );
@@ -83,8 +85,8 @@ async function device(browser, name, { mobile = true } = {}) {
     }
     return false;
   };
-  const local = (key) => page.evaluate((k) => localStorage.getItem(k), key);
-  const keys = () => page.evaluate(() => Object.keys(localStorage));
+  const local = (key) => storeGet(page, key);
+  const keys = () => storeKeys(page);
   /** 本機變更後：等待自動上傳（變更會合併 1 秒後上傳）完成。 */
   const settle = async () => {
     await sleep(1500);
@@ -259,7 +261,7 @@ async function editTask(d, from, to) {
   await A.page.locator('#form-dialog').getByRole('button', { name: '儲存', exact: true }).click();
   await A.settle();
   await B.syncNow();
-  const coins = (d) => d.page.evaluate((uid) => JSON.parse(localStorage.getItem(`daily-habit:u:${uid}:data`)).ledger.reduce((s, e) => s + e.coins, 0), userA);
+  const coins = async (d) => JSON.parse(await d.local(`daily-habit:u:${userA}:data`)).ledger.reduce((s, e) => s + e.coins, 0);
   const startCoins = await coins(A);
   check(startCoins >= 10 && startCoins < 20 && (await coins(B)) === startCoins, `兩台裝置金幣一致（${startCoins}），只夠兌換一次`);
   await A.ctx.setOffline(true);
@@ -280,11 +282,11 @@ async function editTask(d, from, to) {
   check((await coins(A)) === startCoins - 10 && (await coins(B)) === startCoins - 10, '兩台裝置的金幣一致，只扣一次');
 
   // ===== 登入權杖更新 =====
-  await A.page.evaluate(() => {
-    const s = JSON.parse(localStorage.getItem('daily-habit:session'));
+  {
+    const s = JSON.parse(await A.local('daily-habit:session'));
     s.expires_at = Math.floor(Date.now() / 1000) + 10;
-    localStorage.setItem('daily-habit:session', JSON.stringify(s));
-  });
+    await storeSet(A.page, 'daily-habit:session', JSON.stringify(s));
+  }
   await A.page.reload();
   await A.page.waitForSelector('.view:not([hidden]) h2');
   await A.syncNow();
@@ -349,6 +351,7 @@ async function editTask(d, from, to) {
   // ===== 安裝版離線：離線開啟、離線修改、恢復連線後同步（需要 PWA_URL：已填好 config.js 的網站） =====
   if (process.env.PWA_URL) {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, timezoneId: 'Asia/Taipei' });
+    await ctx.addInitScript(TEST_STORE);
     const page = await ctx.newPage();
     const errs = [];
     page.on('pageerror', (e) => errs.push(String(e)));
@@ -390,7 +393,7 @@ async function editTask(d, from, to) {
     await ctx.setOffline(false);
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     check(await waitD(/已同步/), '恢復連線後自動同步');
-    const tokenD = JSON.parse(await page.evaluate(() => localStorage.getItem('daily-habit:session'))).access_token;
+    const tokenD = JSON.parse(await storeGet(page, 'daily-habit:session')).access_token;
     const rows = await fetch(`${SB_URL}/rest/v1/records?select=data&collection=eq.tasks`, { headers: { apikey: SB_KEY, authorization: `Bearer ${tokenD}` } }).then((r) => r.json());
     check(rows.some((r) => r.data.title === '安裝版離線新增'), '雲端收到離線時新增的任務');
     check(errs.length === 0, `安裝版離線情境沒有 JavaScript 錯誤 ${errs.join(' | ')}`);

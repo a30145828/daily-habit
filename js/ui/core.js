@@ -12,6 +12,10 @@ export const VIEWS = ['today', 'tasks', 'habits', 'finance', 'growth', 'settings
 /** 整個程式的狀態。 */
 export const app = {
   storage: null,
+  /** 儲存方式：indexeddb（大容量）、localstorage（約 5 MB）、null（無法儲存） */
+  storageBackend: null,
+  /** 瀏覽器回報的用量與上限（位元組）：{ usage, quota, at } */
+  storageEstimate: null,
   /** normal：正常；memory：無法儲存，只存在記憶體；recovery：資料損壞，等待使用者處理 */
   mode: 'normal',
   data: emptyData(),

@@ -693,6 +693,7 @@ export function installAccount({ loadFrom, startupHooks }) {
   }, 60 * 1000);
   // 其他分頁同步後，更新這個分頁的同步狀態
   window.addEventListener('storage', (event) => {
+    if (event.storageArea && event.storageArea !== app.storage) return;
     if (cloud.session && event.key === syncKey(cloud.session.user.id)) {
       cloud.meta = { ...emptyMeta(), ...(read(event.key) ?? {}) };
       updateStatus();
