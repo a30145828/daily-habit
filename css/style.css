@@ -1582,6 +1582,18 @@ fieldset {
   accent-color: var(--danger);
 }
 
+.storage-meter {
+  display: block;
+  width: 100%;
+  height: 12px;
+  accent-color: var(--primary);
+}
+
+.storage-meter.is-warn,
+.storage-meter.is-danger {
+  accent-color: var(--danger);
+}
+
 .card.sub,
 .card.budget {
   margin-bottom: 0;

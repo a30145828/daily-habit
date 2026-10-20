@@ -23,7 +23,7 @@ import { installGame, settleRewards } from './ui/game-view.js';
 import { renderGrowth } from './ui/growth-view.js';
 import { renderHabits } from './ui/habits-view.js';
 import { installPwa } from './ui/pwa-view.js';
-import { renderRecovery, renderSettings } from './ui/settings-view.js';
+import { checkStorageUsage, renderRecovery, renderSettings } from './ui/settings-view.js';
 import { installSubscriptionExtensions } from './ui/subscriptions-view.js';
 import { renderTasks } from './ui/tasks-view.js';
 import { renderToday } from './ui/today-view.js';
@@ -150,6 +150,7 @@ async function init() {
   $('boot-message')?.remove();
   render();
   settleRewards();
+  checkStorageUsage();
 }
 
 init();

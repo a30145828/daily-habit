@@ -859,6 +859,42 @@ async function suiteGeneral(browser) {
     await t.ctx.close();
   }
 
+  // 儲存空間用量：設定頁顯示用量；超過七成、九成時在畫面上方提醒
+  {
+    const t = await open(browser);
+    const { page } = t;
+    await t.go('settings');
+    const storageCard = page.locator('section[aria-labelledby=settings-storage]');
+    check(await vis(storageCard.getByText(/這個瀏覽器已使用.+，約為上限的 \d+%/)), '設定頁顯示儲存空間用量與百分比');
+    check((await storageCard.locator('progress').getAttribute('aria-label'))?.startsWith('儲存空間已使用'), '用量進度條有文字標籤');
+    check((await storageCard.locator('[data-storage-level]').innerText()).includes('空間充足'), '用量少時顯示空間充足（不只靠顏色）');
+    check((await page.locator('#notices').innerText()).includes('儲存空間') === false, '用量少時不顯示提醒');
+    const dataBefore = await page.evaluate(() => localStorage.getItem('daily-habit:data'));
+
+    // 模擬同網址其他網站佔用空間
+    await page.evaluate(() => localStorage.setItem('other-site:big', 'x'.repeat(3_600_000)));
+    await page.reload();
+    await page.waitForSelector('#view-settings h2');
+    const warn = page.locator('#notices .notice--warning', { hasText: '儲存空間已使用約' });
+    check(await vis(warn), '用量超過七成時畫面上方提醒');
+    check((await storageCard.locator('[data-storage-level]').innerText()).includes('已使用超過七成'), '設定頁顯示超過七成的說明');
+    check(await vis(storageCard.getByText('同網址下其他網站的資料')), '用量明細列出其他網站佔用的空間');
+    await t.go('today');
+    await warn.getByRole('button', { name: '前往設定' }).click();
+    await page.waitForSelector('#view-settings:not([hidden]) h2');
+    check(page.url().endsWith('#settings'), '提醒中的「前往設定」會開啟設定頁');
+
+    await page.evaluate(() => localStorage.setItem('other-site:big', 'x'.repeat(4_600_000)));
+    await page.reload();
+    await page.waitForSelector('#view-settings h2');
+    check(await vis(page.locator('#notices .notice--error', { hasText: '空間快滿了' })), '用量超過九成時顯示錯誤等級提醒');
+    check((await storageCard.locator('[data-storage-level]').innerText()).includes('空間快滿了'), '設定頁顯示快滿的說明');
+    check((await page.evaluate(() => localStorage.getItem('daily-habit:data'))) === dataBefore, '計算用量不會修改使用者資料');
+    await page.evaluate(() => localStorage.removeItem('other-site:big'));
+    check(t.errors.length === 0, `儲存空間檢查無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
   // 手機與電腦：每個區域無橫向捲動、觸控範圍
   for (const mobile of [true, false]) {
     const t = await open(browser, { mobile });
