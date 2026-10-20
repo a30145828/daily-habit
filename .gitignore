@@ -1,0 +1,9 @@
+# 不要把個人資料提交到 GitHub：備份檔、原始資料匯出
+daily-habit-backup-*.json
+daily-habit-raw-*.txt
+
+# 開發工具產生的檔案
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
