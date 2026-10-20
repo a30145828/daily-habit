@@ -1,0 +1,11 @@
+{
+  "name": "daily-habit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "每日待辦與習慣管理工具（純前端，資料存在瀏覽器 localStorage）",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "python3 -m http.server 8000"
+  }
+}
