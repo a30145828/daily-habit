@@ -1,12 +1,13 @@
 // 備份檔的產生與驗證。
 // 備份檔格式：
-// { "app": "daily-habit", "version": 1, "exportedAt": "ISO 時間", "data": { todos, habits, checkins } }
+// { "app": "daily-habit", "version": 2, "exportedAt": "ISO 時間", "data": { tasks, habits, checkins, … } }
+// 版本 1 的備份（data 內為 todos、habits、checkins）會自動轉換為版本 2。
 
 import { toDateKey } from './dates.js';
-import { CURRENT_VERSION, countData, migrateData, validateData } from './schema.js';
+import { COLLECTIONS, CURRENT_VERSION, countData, migrateData, validateData } from './schema.js';
 
 export const BACKUP_APP_ID = 'daily-habit';
-export const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
+export const BACKUP_MAX_BYTES = 20 * 1024 * 1024;
 
 /** 產生備份物件。 */
 export function createBackup(data, now = new Date()) {
@@ -14,11 +15,7 @@ export function createBackup(data, now = new Date()) {
     app: BACKUP_APP_ID,
     version: CURRENT_VERSION,
     exportedAt: now.toISOString(),
-    data: {
-      todos: data.todos,
-      habits: data.habits,
-      checkins: data.checkins,
-    },
+    data: Object.fromEntries(COLLECTIONS.map((name) => [name, data[name]])),
   };
 }
 

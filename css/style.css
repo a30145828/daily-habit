@@ -1054,3 +1054,864 @@ textarea[aria-invalid='true'] {
     transition: none !important;
   }
 }
+
+/* ===== 第 2 版新增元件 ===== */
+.status-bar:empty {
+  display: none;
+}
+
+.status-bar {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* 6 個導覽項目：手機上縮小字距 */
+@media (max-width: 767px) {
+  .tabs-list {
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  .tab {
+    font-size: 0.72rem;
+    padding: 6px 0;
+  }
+}
+
+.field-hint {
+  margin: -2px 0 6px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+input[type='number'],
+input[type='search'],
+input[type='month'],
+input[type='email'],
+input[type='password'] {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+select[aria-invalid='true'],
+input[aria-invalid='true'],
+fieldset[aria-invalid='true'] {
+  border-color: var(--danger);
+  border-width: 2px;
+}
+
+.toolbar {
+  padding: 12px 0 4px;
+}
+
+.toolbar-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0 12px;
+}
+
+details.filters,
+details.method {
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  background: var(--surface);
+}
+
+details.filters > summary,
+details.method > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+details.method > ul {
+  padding-bottom: 8px;
+}
+
+.segmented--scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.segmented--scroll label {
+  flex-shrink: 0;
+}
+
+.segmented--days span {
+  min-width: 44px;
+  justify-content: center;
+  padding: 8px 10px;
+}
+
+.segmented--days input:checked + span::before {
+  content: '';
+}
+
+.segmented--days input:checked + span {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.mode-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.btn[aria-pressed='true'] {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn[aria-pressed='true']::before {
+  content: '✓ ';
+  white-space: pre;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.badge--repeat {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.badge--tag {
+  background: var(--surface);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.subtask-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.subtask-list .checkbox-label {
+  margin: 0;
+  min-height: 44px;
+  align-items: center;
+}
+
+.is-struck {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.subtask-editor {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.subtask-editor li {
+  display: flex;
+  gap: 8px;
+}
+
+.subtask-editor input {
+  flex: 1;
+  min-width: 0;
+}
+
+.repeat-detail {
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.dialog--wide {
+  width: min(640px, calc(100vw - 24px));
+}
+
+.dialog-actions .spacer {
+  flex: 1;
+}
+
+.choice-list {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.choice-list .btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* 月曆 */
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendar-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin: 8px 0 12px;
+}
+
+.calendar-weekday {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.calendar-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 48px;
+  min-width: 0;
+  padding: 4px 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.calendar-day.is-outside {
+  opacity: 0.5;
+}
+
+.calendar-day.is-today .calendar-date {
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.calendar-day[aria-pressed='true'] {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+}
+
+.calendar-day:disabled {
+  cursor: default;
+}
+
+.calendar-date {
+  font-size: 0.9rem;
+}
+
+.calendar-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: 999px;
+  min-width: 20px;
+  padding: 0 6px;
+}
+
+.calendar-count.is-done {
+  background: var(--surface-2);
+  color: var(--primary);
+}
+
+.calendar-day .day-mark {
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
+}
+
+.day--rest .day-mark,
+.day-mark.day--rest {
+  background: transparent;
+  border-style: dashed;
+}
+
+.day--extra .day-mark,
+.day-mark.day--extra {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.day--future .day-mark {
+  visibility: hidden;
+}
+
+.status--rest {
+  color: var(--muted);
+}
+
+.habit-schedule {
+  margin: 0;
+}
+
+.summary {
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+}
+
+.summary-link {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* fieldset 預設最小寬度為內容寬度，會撐開手機版面 */
+fieldset {
+  min-width: 0;
+}
+
+.review-period {
+  margin: 0;
+  font-weight: 700;
+  text-align: center;
+}
+
+.review-habits {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+.review-habits li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-form textarea {
+  margin-bottom: 4px;
+}
+
+.calendar-nav .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ===== 財務 ===== */
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0 12px;
+}
+
+.month-picker input {
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  max-width: 170px;
+}
+
+.money-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.money-card {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.money-card dd {
+  margin: 4px 0 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.money-currency {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.money-net {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin: 0;
+  font-weight: 700;
+}
+
+.amount--income {
+  color: var(--primary);
+}
+
+.amount--expense {
+  color: var(--danger);
+}
+
+.txn-day {
+  margin-bottom: 12px;
+}
+
+.txn-date {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 12px 0 6px;
+}
+
+.txn-list,
+.renewal-list,
+.sub-list,
+.budget-list,
+.setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.txn,
+.renewal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'main amount'
+    'actions actions';
+  gap: 4px 8px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.renewal {
+  grid-template-areas:
+    'main main'
+    'actions actions';
+}
+
+.txn-main,
+.renewal-main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.txn .amount {
+  grid-area: amount;
+}
+
+.txn .todo-actions,
+.renewal .todo-actions {
+  grid-area: actions;
+  margin-left: -8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.txn-title,
+.renewal-title,
+.setup-name {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.budget-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.budget-head h4 {
+  margin: 0;
+}
+
+.budget progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--primary);
+}
+
+.budget.is-over progress {
+  accent-color: var(--danger);
+}
+
+.card.sub,
+.card.budget {
+  margin-bottom: 0;
+}
+
+.sub.is-archived {
+  background: var(--surface-2);
+}
+
+.setup-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setup-item p {
+  margin: 0;
+}
+
+.setup-item.is-archived .setup-name {
+  color: var(--muted);
+}
+
+.csv-step {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.csv-step h4:focus {
+  outline: none;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  max-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.csv-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.csv-table th,
+.csv-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.csv-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+}
+
+.csv-table .row--error td {
+  background: var(--danger-soft);
+}
+
+.csv-table .row--duplicate td {
+  background: var(--warning-soft);
+}
+
+/* 操作按鈕不要被擠成直排 */
+.todo-actions {
+  flex-wrap: wrap;
+}
+
+.todo-actions .btn,
+.button-row .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ===== 遊戲化 ===== */
+.notice--success {
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+}
+
+.character {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.avatar {
+  --progress: 0%;
+  flex-shrink: 0;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--primary) var(--progress), var(--surface-2) 0);
+}
+
+.avatar-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 2.4rem;
+}
+
+.avatar.level-up {
+  animation: level-up 1.2s ease-out 2;
+}
+
+@keyframes level-up {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  40% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 18px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar.level-up {
+    animation: none;
+  }
+}
+
+.character-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.character-info progress,
+.character progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--primary);
+}
+
+.character-level {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+
+.achievement-list,
+.reward-list,
+.ledger-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.achievement,
+.reward {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.achievement.is-unlocked {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.achievement p,
+.reward p {
+  margin: 0;
+}
+
+.achievement-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 40px;
+  text-align: center;
+}
+
+.achievement-name {
+  font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.reward {
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.reward-main {
+  flex: 1;
+  min-width: 140px;
+}
+
+.reward.is-archived {
+  background: var(--surface-2);
+}
+
+.ledger {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'kind delta'
+    'main main'
+    'action action';
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ledger-kind {
+  grid-area: kind;
+  justify-self: start;
+}
+
+.ledger-main {
+  grid-area: main;
+}
+
+.ledger-delta {
+  grid-area: delta;
+  justify-self: end;
+}
+
+.ledger-action {
+  grid-area: action;
+}
+
+.ledger-main p {
+  margin: 0;
+  word-break: break-word;
+}
+
+.ledger-delta {
+  margin: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger--revoke .badge,
+.ledger--redeem .badge {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.ledger--award .badge,
+.ledger--achievement .badge,
+.ledger--refund .badge {
+  color: var(--primary);
+  border-color: currentColor;
+}
+
+.pref-row {
+  margin-top: 12px;
+}
+
+/* ===== 帳號與同步 ===== */
+.status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.sync-status--error,
+.sync-status--expired,
+.sync-status--conflict {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.sync-status--offline,
+.sync-status--pending {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.status-link {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.auth-form {
+  margin-top: 12px;
+}
+
+.conflict-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.conflict {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.conflict-title {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+#auth-message:focus {
+  outline: none;
+}

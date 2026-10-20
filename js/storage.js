@@ -2,11 +2,18 @@
 // - 讀不到或資料損壞時，絕不自動覆蓋原本的內容。
 // - 寫入失敗時回傳錯誤，讓畫面顯示訊息，並且不套用這次的變更。
 
-import { CURRENT_VERSION, emptyData, migrateData, validateData } from './schema.js';
+import { COLLECTIONS, CURRENT_VERSION, emptyData, migrateData, validateData } from './schema.js';
 
+/** 本機模式（未登入）的資料位置。登入後各帳號另有獨立位置，見 accountDataKey。 */
 export const STORAGE_KEY = 'daily-habit:data';
 export const CORRUPT_KEY_PREFIX = 'daily-habit:corrupt-';
 export const PRE_MIGRATION_KEY_PREFIX = 'daily-habit:before-v';
+export const ACCOUNT_KEY_PREFIX = 'daily-habit:u:';
+
+/** 某帳號在這台裝置上的資料快取位置。 */
+export function accountDataKey(userId) {
+  return `${ACCOUNT_KEY_PREFIX}${userId}:data`;
+}
 
 /** 取得可用的 localStorage；無法使用（例如被瀏覽器封鎖）時回傳 null。 */
 export function getBrowserStorage() {
@@ -24,13 +31,9 @@ export function getBrowserStorage() {
 
 /** 序列化成要存進 localStorage 的文字。 */
 export function serializeData(data, now = new Date()) {
-  return JSON.stringify({
-    version: CURRENT_VERSION,
-    savedAt: now.toISOString(),
-    todos: data.todos,
-    habits: data.habits,
-    checkins: data.checkins,
-  });
+  const payload = { version: CURRENT_VERSION, savedAt: now.toISOString() };
+  for (const name of COLLECTIONS) payload[name] = data[name];
+  return JSON.stringify(payload);
 }
 
 /**
@@ -40,12 +43,12 @@ export function serializeData(data, now = new Date()) {
  * - { status: 'unavailable', data }      瀏覽器不允許使用 localStorage
  * - { status: 'corrupt', raw, errors }   資料無法讀取（原始內容保持不動）
  */
-export function loadData(storage, now = new Date()) {
+export function loadData(storage, now = new Date(), key = STORAGE_KEY) {
   if (!storage) return { status: 'unavailable', data: emptyData() };
 
   let raw;
   try {
-    raw = storage.getItem(STORAGE_KEY);
+    raw = storage.getItem(key);
   } catch {
     return { status: 'unavailable', data: emptyData() };
   }
@@ -63,10 +66,8 @@ export function loadData(storage, now = new Date()) {
 
   let migrated;
   try {
-    migrated = migrateData(
-      { todos: parsed.todos, habits: parsed.habits, checkins: parsed.checkins },
-      parsed.version,
-    );
+    const { version, savedAt, ...content } = parsed;
+    migrated = migrateData(content, parsed.version);
   } catch (error) {
     return { status: 'corrupt', raw, errors: [error.message] };
   }
@@ -78,8 +79,9 @@ export function loadData(storage, now = new Date()) {
   if (parsed.version !== CURRENT_VERSION) {
     // 升級前先把舊版原始資料另存一份，再寫入新版本格式。
     try {
-      storage.setItem(`${PRE_MIGRATION_KEY_PREFIX}${parsed.version}`, raw);
-      storage.setItem(STORAGE_KEY, serializeData(result.data, now));
+      const backupKey = key === STORAGE_KEY ? `${PRE_MIGRATION_KEY_PREFIX}${parsed.version}` : `${key}:before-v${parsed.version}`;
+      if (storage.getItem(backupKey) === null) storage.setItem(backupKey, raw);
+      storage.setItem(key, serializeData(result.data, now));
     } catch {
       warnings.push('資料已升級為新版格式，但無法寫回瀏覽器，下次開啟會再升級一次。');
     }
@@ -88,10 +90,10 @@ export function loadData(storage, now = new Date()) {
 }
 
 /** 寫入資料。回傳 { ok: true } 或 { ok: false, message }。 */
-export function saveData(storage, data, now = new Date()) {
+export function saveData(storage, data, now = new Date(), key = STORAGE_KEY) {
   if (!storage) return { ok: false, message: '瀏覽器不允許儲存資料。' };
   try {
-    storage.setItem(STORAGE_KEY, serializeData(data, now));
+    storage.setItem(key, serializeData(data, now));
     return { ok: true };
   } catch (error) {
     const quota =
