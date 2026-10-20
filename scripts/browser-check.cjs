@@ -1,7 +1,7 @@
 // 瀏覽器端到端檢查（選用）。需要已安裝 Playwright 與 Chromium。
 // 用法：先啟動本機伺服器，再執行
 //   BASE_URL=http://localhost:8000/ node scripts/browser-check.cjs [截圖輸出資料夾] [群組…]
-// 群組：tasks habits review finance game（不指定時全部執行）。
+// 群組：general tasks habits review finance game（不指定時全部執行）。
 // 每個情境都使用全新的瀏覽器資料，並把時間固定在台灣 2026-10-20（二）10:00，不會動到你平常使用的資料。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -820,7 +820,226 @@ async function suiteGameMigration(browser) {
   await t.ctx.close();
 }
 
+// ===================== 通用：部署、版面、鍵盤、備份、儲存 =====================
+
+async function suiteGeneral(browser) {
+  // 部署子路徑：所有資源成功載入
+  {
+    const t = await open(browser, { time: null });
+    const { page } = t;
+    const bad = [];
+    const loaded = [];
+    page.on('response', (r) => {
+      loaded.push(r.url());
+      if (r.status() >= 400) bad.push(`${r.status()} ${r.url()}`);
+    });
+    page.on('requestfailed', (r) => bad.push(`failed ${r.url()}`));
+    await page.reload();
+    await page.waitForSelector('#view-today h2');
+    const base = new globalThis.URL(URL).pathname;
+    check(bad.length === 0, `部署路徑 ${base} 下沒有載入失敗的資源 ${bad.join(' ')}`);
+    check(loaded.filter((u) => u.includes('/js/')).length >= 15 && loaded.some((u) => u.endsWith(`${base}css/style.css`)), `樣式與 ${loaded.filter((u) => u.includes('/js/')).length} 個程式檔以相對路徑載入`);
+    if (base !== '/') {
+      await page.goto(URL.replace(/\/$/, ''));
+      await page.waitForSelector('#view-today h2');
+      check(page.url().startsWith(URL), '網址沒有結尾斜線時也能正常開啟');
+    }
+    await t.go('settings');
+    check(await vis(page.getByText('雲端同步尚未設定')), '未設定 Supabase 時說明以本機模式運作');
+    check((await page.locator('#status-bar').innerText()).trim() === '', '未設定雲端時不顯示同步狀態');
+    check(t.errors.length === 0, `無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
+  // 手機與電腦：每個區域無橫向捲動、觸控範圍
+  for (const mobile of [true, false]) {
+    const t = await open(browser, { mobile });
+    const { page } = t;
+    await page.getByRole('button', { name: '載入範例資料' }).click();
+    await page.waitForTimeout(100);
+    const label = mobile ? '手機 375px' : '電腦 1280px';
+    for (const view of ['today', 'tasks', 'habits', 'finance', 'growth', 'settings']) {
+      await t.go(view);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      check(overflow <= 0, `${label}「${view}」無橫向捲動（${overflow}）`);
+      if (mobile) {
+        const small = await page.evaluate(() =>
+          [...document.querySelectorAll('.view:not([hidden]) button, a.tab, .view:not([hidden]) .segmented span, label.todo-check, .view:not([hidden]) input[type=text], .view:not([hidden]) input[type=date], .view:not([hidden]) select')]
+            .filter((e) => e.offsetParent)
+            .map((e) => {
+              const r = e.getBoundingClientRect();
+              return { t: (e.getAttribute('aria-label') || e.textContent || e.id).trim().slice(0, 14), w: Math.round(r.width), h: Math.round(r.height) };
+            })
+            .filter((x) => x.w < 44 || x.h < 44),
+        );
+        check(small.length === 0, `${label}「${view}」可點擊元素至少 44×44px ${JSON.stringify(small.slice(0, 5))}`);
+      }
+      await t.shot(`${mobile ? 'm' : 'd'}-${view}`);
+    }
+    // 財務的每個分頁
+    await t.go('finance');
+    for (const tab of ['訂閱', '預算', '分類與帳戶', '匯入匯出']) {
+      await page.locator('.segmented label', { hasText: tab }).click();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      check(overflow <= 0, `${label} 財務「${tab}」無橫向捲動`);
+    }
+    // 對話框不超出畫面
+    await t.go('tasks');
+    await page.getByRole('button', { name: '＋ 新增任務' }).click();
+    await page.selectOption('#task-repeat', 'weekly');
+    const box = await page.locator('#form-dialog').boundingBox();
+    const vw = await page.evaluate(() => window.innerWidth);
+    check(box.x >= 0 && box.x + box.width <= vw, `${label} 任務表單對話框在畫面內`);
+    await page.keyboard.press('Escape');
+    check(t.errors.length === 0, `${label} 無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
+  // 鍵盤操作
+  {
+    const t = await open(browser, { mobile: false });
+    const { page } = t;
+    await page.getByRole('button', { name: '載入範例資料' }).click();
+    await page.reload();
+    await page.waitForSelector('#view-today h2');
+    await page.keyboard.press('Tab');
+    check((await page.evaluate(() => document.activeElement.textContent.trim())) === '跳到主要內容', '第一個 Tab 是「跳到主要內容」');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    check((await page.evaluate(() => document.activeElement.textContent.trim())) === '任務', 'Tab 到導覽「任務」');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#view-tasks:not([hidden])');
+    check((await page.evaluate(() => document.activeElement.id)) === 'heading-tasks', '切換區域後焦點移到標題');
+    await page.locator('#view-tasks input[type=checkbox]').first().focus();
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(100);
+    check(String(await page.evaluate(() => document.activeElement.dataset.focusKey)).startsWith('task-done-'), '鍵盤勾選後焦點仍在勾選框');
+    await page.getByRole('button', { name: '＋ 新增任務' }).focus();
+    await page.keyboard.press('Enter');
+    check((await page.evaluate(() => document.activeElement.id)) === 'task-title', '開啟表單後焦點在第一個欄位');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(50);
+    check((await page.evaluate(() => document.activeElement.dataset.focusKey)) === 'tasks-add', 'Esc 關閉對話框後焦點回到開啟按鈕');
+    // 方向鍵切換視圖（原生 radio）
+    await page.locator('input[name="task-view"]').first().focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(50);
+    check((await page.locator('input[name="task-view"]:checked').getAttribute('value')) === 'overdue', '方向鍵切換任務視圖');
+    check(t.errors.length === 0, `鍵盤操作無 JavaScript 錯誤 ${t.errors.join(' | ')}`);
+    await t.ctx.close();
+  }
+
+  // 使用者輸入以文字顯示
+  {
+    const t = await open(browser, { hash: '#tasks' });
+    const { page } = t;
+    const xss = '<img src=x onerror="window.__xss=1">';
+    await addTask(t, { title: xss, note: '<b>粗體</b>', tags: '<script>' });
+    await setView(t, '全部');
+    check(await vis(page.locator('.todo-title', { hasText: xss })), '任務名稱以文字顯示');
+    check((await page.locator('#view-tasks img, #view-tasks b').count()) === 0 && !(await page.evaluate(() => window.__xss)), '輸入內容沒有被當成 HTML 執行');
+    await t.ctx.close();
+  }
+
+  // 完整備份：匯出、清除、還原；無效備份不覆蓋
+  {
+    const t = await open(browser, { hash: '#settings' });
+    const { page } = t;
+    await page.getByRole('button', { name: '載入範例資料' }).click();
+    await page.waitForTimeout(100);
+    const original = await t.read();
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '下載備份檔' }).click()]);
+    check(dl.suggestedFilename() === 'daily-habit-backup-2026-10-20.json', `備份檔名含日期：${dl.suggestedFilename()}`);
+    const backupPath = path.join(OUT, 'full-backup.json');
+    await dl.saveAs(backupPath);
+    const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    check(backup.app === 'daily-habit' && backup.version === 2 && backup.data.transactions.length > 0 && backup.data.ledger.length > 0, '備份包含任務、財務與遊戲紀錄');
+    await page.getByRole('button', { name: '清除所有資料…' }).click();
+    await t.confirmOk();
+    await page.waitForTimeout(100);
+    check((await t.read()).tasks.length === 0, '清除所有資料');
+    await page.setInputFiles('#import-file', backupPath);
+    check(await vis(page.getByText('✓ 備份檔檢查通過')), '備份檢查通過並顯示筆數');
+    await page.getByRole('button', { name: '以此備份還原…' }).click();
+    await t.confirmOk();
+    await page.waitForTimeout(150);
+    const restored = await t.read();
+    // 還原時資料會依規格重新整理欄位順序，因此用與欄位順序無關的方式比較內容
+    const stable = (v) => (v && typeof v === 'object' ? (Array.isArray(v) ? `[${v.map(stable).join(',')}]` : `{${Object.keys(v).sort().map((k) => `${k}:${stable(v[k])}`).join(',')}}`) : JSON.stringify(v));
+    const strip = (d) => stable(['tasks', 'series', 'habits', 'checkins', 'transactions', 'subscriptions', 'budgets', 'rewards', 'ledger'].map((k) => d[k]));
+    check(strip(restored) === strip(original), '還原後資料與匯出時完全相同（含財務與獎勵紀錄）');
+
+    const v1Path = path.join(OUT, 'v1-backup.json');
+    fs.writeFileSync(v1Path, JSON.stringify({ app: 'daily-habit', version: 1, exportedAt: '2026-10-01T00:00:00.000Z', data: { todos: [{ id: 't_v1', title: '第一版的待辦', note: '', dueDate: null, priority: 'low', done: false, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', completedAt: null }], habits: [], checkins: [] } }));
+    await page.setInputFiles('#import-file', v1Path);
+    check(await vis(page.getByText('還原時會自動轉換為版本 2')), '第一版備份可還原並提示會轉換');
+    await page.getByRole('button', { name: '取消', exact: true }).click();
+
+    const cases = [
+      ['不支援的新版本', JSON.stringify({ ...backup, version: 3 }), /版本 3/],
+      ['檔案被截斷', fs.readFileSync(backupPath, 'utf8').slice(0, 300), /JSON/],
+      ['其他程式的檔案', JSON.stringify({ hello: 1 }), /不是/],
+      ['錯誤日期', JSON.stringify({ ...backup, data: { ...backup.data, tasks: [{ ...backup.data.tasks[0], dueDate: '2026-02-30' }] } }), /2026-02-30/],
+      ['錯誤金額', JSON.stringify({ ...backup, data: { ...backup.data, transactions: [{ ...backup.data.transactions[0], amountMinor: -5 }] } }), /金額/],
+      ['重複識別碼', JSON.stringify({ ...backup, data: { ...backup.data, habits: [backup.data.habits[0], backup.data.habits[0]] } }), /重複/],
+    ];
+    for (const [name, text, re] of cases) {
+      const before = await page.evaluate((k) => localStorage.getItem(k), KEY);
+      const file = path.join(OUT, 'bad.json');
+      fs.writeFileSync(file, text);
+      await page.setInputFiles('#import-file', file);
+      const shown = await vis(page.getByText('✕ 無法使用這個備份檔'));
+      const message = await page.locator('.import-preview').innerText();
+      const after = await page.evaluate((k) => localStorage.getItem(k), KEY);
+      check(shown && re.test(message) && before === after && (await page.getByRole('button', { name: '以此備份還原…' }).count()) === 0, `無效備份（${name}）被拒絕，資料未變更`);
+      await page.getByRole('button', { name: '關閉', exact: true }).click();
+    }
+    await t.ctx.close();
+  }
+
+  // 儲存失敗、資料損壞、無法使用 localStorage
+  {
+    const t = await open(browser, { hash: '#tasks' });
+    const { page } = t;
+    await addTask(t, { title: '已存在的任務' });
+    await page.evaluate(() => {
+      Storage.prototype.setItem = function () {
+        const e = new Error('full');
+        e.name = 'QuotaExceededError';
+        throw e;
+      };
+    });
+    await addTask(t, { title: '存不進去' });
+    check(await vis(page.getByText('瀏覽器儲存空間已滿')), '儲存失敗時顯示明確訊息');
+    check(!(await vis(page.locator('.todo-title', { hasText: '存不進去' }), 500)), '儲存失敗時不套用變更');
+    await page.reload();
+    await page.waitForSelector('#view-tasks h2');
+    await page.evaluate((k) => localStorage.setItem(k, '{"version":2,"tasks":[{"id":'), KEY);
+    await page.reload();
+    check(await vis(page.getByText('無法讀取已儲存的資料')), '資料損壞時顯示救援畫面');
+    check((await page.evaluate((k) => localStorage.getItem(k), KEY)) === '{"version":2,"tasks":[{"id":', '損壞的資料沒有被覆寫');
+    await page.getByRole('button', { name: '改用空白資料開始…' }).click();
+    await t.confirmOk();
+    await page.waitForTimeout(150);
+    const keys = await page.evaluate(() => Object.keys(localStorage));
+    check(keys.some((k) => k.startsWith('daily-habit:corrupt-')), '改用空白資料前另存了損壞的原始內容');
+    await t.ctx.close();
+  }
+  {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    await ctx.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('denied', 'SecurityError'); } }));
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', (e) => errs.push(String(e)));
+    await page.goto(URL);
+    check(await vis(page.getByText('瀏覽器目前不允許儲存資料')), '無法使用 localStorage 時顯示警告，仍可暫時使用');
+    check(errs.length === 0, `無法儲存時沒有 JavaScript 錯誤 ${errs.join(' | ')}`);
+    await ctx.close();
+  }
+}
+
 const SUITES = {
+  general: [suiteGeneral],
   tasks: [suiteTasks, suiteRecurring, suiteMidnight],
   habits: [suiteHabits],
   review: [suiteReview],
