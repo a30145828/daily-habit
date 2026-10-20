@@ -120,3 +120,47 @@ export function preserveCorruptData(storage, raw, now = new Date()) {
     return { ok: false, message: '無法另存損壞的資料（儲存空間可能已滿），請先下載原始內容。' };
   }
 }
+
+// ---------- 儲存空間用量 ----------
+
+/**
+ * 瀏覽器給每個網址（例如 a30145828.github.io）的 localStorage 空間，以「字元數」估算。
+ * 各瀏覽器的實際上限不同（約 5 MB），這裡採用保守的估計值，只用來提早提醒。
+ */
+export const STORAGE_LIMIT_CHARS = 5_000_000;
+export const STORAGE_WARN_RATIO = 0.7;
+export const STORAGE_DANGER_RATIO = 0.9;
+
+/** 依位置名稱分類：current 目前使用中、local 本機模式、account 帳號快取與同步狀態、preserved 保留的原始資料、app 本工具其他設定、other 同網址的其他網站。 */
+export function storageKind(key, currentKey) {
+  if (key === currentKey) return 'current';
+  if (key === STORAGE_KEY) return 'local';
+  if (key.startsWith(ACCOUNT_KEY_PREFIX)) return 'account';
+  if (key.startsWith(PRE_MIGRATION_KEY_PREFIX) || key.startsWith(CORRUPT_KEY_PREFIX)) return 'preserved';
+  if (key.startsWith('daily-habit:')) return 'app';
+  return 'other';
+}
+
+/**
+ * 計算 localStorage 用量（位置名稱加內容的字元數）。只讀取，不修改任何內容。
+ * 回傳 { used, limit, ratio, level: 'ok'|'warn'|'danger', kinds: { current, local, … } }；無法讀取時回傳 null。
+ */
+export function measureStorage(storage, currentKey = STORAGE_KEY, limit = STORAGE_LIMIT_CHARS) {
+  if (!storage) return null;
+  const kinds = { current: 0, local: 0, account: 0, preserved: 0, app: 0, other: 0 };
+  let used = 0;
+  try {
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key === null) continue;
+      const size = key.length + (storage.getItem(key) ?? '').length;
+      kinds[storageKind(key, currentKey)] += size;
+      used += size;
+    }
+  } catch {
+    return null;
+  }
+  const ratio = used / limit;
+  const level = ratio >= STORAGE_DANGER_RATIO ? 'danger' : ratio >= STORAGE_WARN_RATIO ? 'warn' : 'ok';
+  return { used, limit, ratio, level, kinds };
+}

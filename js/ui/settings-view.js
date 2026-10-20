@@ -1,4 +1,4 @@
-// 設定區域：偏好設定、資料保存說明、完整備份匯出與還原、範例資料、清除資料；
+// 設定區域：偏好設定、資料保存說明、儲存空間用量、完整備份匯出與還原、範例資料、清除資料；
 // 以及資料損壞時的救援畫面。帳號與同步的設定由 account-view.js 登記到這裡。
 
 import { BACKUP_MAX_BYTES, backupFileName, createBackup, validateBackupText } from '../backup.js';
@@ -6,7 +6,7 @@ import { formatTimestamp } from '../dates.js';
 import { downloadText } from '../dom.js';
 import { buildSampleData, mergeSample } from '../sample.js';
 import { COLLECTIONS, CURRENT_VERSION, countData, describeCounts, emptyData, hasUserData } from '../schema.js';
-import { preserveCorruptData, saveData } from '../storage.js';
+import { STORAGE_LIMIT_CHARS, measureStorage, preserveCorruptData, saveData } from '../storage.js';
 import {
   addNotice,
   app,
@@ -222,6 +222,84 @@ async function confirmImport(onConfirm) {
   }
 }
 
+// ---------- 儲存空間用量 ----------
+
+const STORAGE_KIND_LABELS = {
+  current: '目前使用的資料（任務、習慣、財務等）',
+  local: '未登入時的本機資料',
+  account: '帳號資料快取與待同步紀錄',
+  preserved: '升級前或損壞時另存的原始資料',
+  app: '本工具的其他設定',
+  other: '同網址下其他網站的資料',
+};
+
+const STORAGE_LEVEL_TEXT = {
+  ok: '✓ 空間充足。',
+  warn: '⚠ 已使用超過七成。建議先匯出備份，並清除同網址下不需要的其他網站資料。',
+  danger: '⛔ 空間快滿了：滿了之後新的變更將無法保存。請立即匯出備份。',
+};
+
+/** 以字元數概略換算成 KB／MB（只用於顯示）。 */
+function formatStorageSize(chars) {
+  if (chars < 1000) return '不到 1 KB';
+  if (chars < 1_000_000) return `約 ${Math.round(chars / 1000)} KB`;
+  return `約 ${(chars / 1_000_000).toFixed(1)} MB`;
+}
+
+function storagePercent(usage) {
+  return Math.min(100, Math.round(usage.ratio * 100));
+}
+
+/** 啟動時檢查用量；超過七成在畫面上方提醒（由 app.js 呼叫）。 */
+export function checkStorageUsage() {
+  if (app.mode === 'memory') return;
+  const usage = measureStorage(app.storage, app.storageKey);
+  if (!usage || usage.level === 'ok') return;
+  addNotice(
+    `瀏覽器儲存空間已使用約 ${storagePercent(usage)}%。${usage.level === 'danger' ? '空間快滿了，滿了之後新的變更將無法保存，' : ''}請先匯出備份，詳情見「設定 → 儲存空間」。`,
+    usage.level === 'danger' ? 'error' : 'warning',
+    { key: 'storage-usage', action: { label: '前往設定', onClick: () => (location.hash = '#settings') } },
+  );
+}
+
+function renderStorageUsage() {
+  const usage = app.mode === 'memory' ? null : measureStorage(app.storage, app.storageKey);
+  if (!usage) {
+    return card('settings-storage', '儲存空間', h('p', {}, '瀏覽器目前不允許讀取儲存空間，無法計算用量。'));
+  }
+  const percent = storagePercent(usage);
+  return card(
+    'settings-storage',
+    '儲存空間',
+    h('p', {}, `這個瀏覽器已使用${formatStorageSize(usage.used)}，約為上限的 ${percent}%。`),
+    h('progress', {
+      class: `storage-meter is-${usage.level}`,
+      max: '100',
+      value: String(percent),
+      'aria-label': `儲存空間已使用 ${percent}%`,
+    }),
+    h(
+      'p',
+      { class: usage.level === 'ok' ? 'small' : `small notice notice--${usage.level === 'danger' ? 'error' : 'warning'}`, 'data-storage-level': usage.level },
+      STORAGE_LEVEL_TEXT[usage.level],
+    ),
+    h(
+      'dl',
+      { class: 'details' },
+      Object.entries(usage.kinds)
+        .filter(([, size]) => size > 0)
+        .map(([kind, size]) => [h('dt', {}, STORAGE_KIND_LABELS[kind]), h('dd', {}, formatStorageSize(size))]),
+    ),
+    h(
+      'ul',
+      { class: 'bullets small' },
+      h('li', {}, `上限依瀏覽器不同，這裡以約 ${STORAGE_LIMIT_CHARS / 1_000_000} MB 估算。同一個網址（${location.host || '本機'}）下的所有網站共用這個空間。`),
+      h('li', {}, '空間不足時，新的變更不會保存，但已經保存的資料不會被刪除。'),
+      app.session ? h('li', {}, '你已登入：資料也存在雲端，但這台裝置的空間滿了之後，新的變更無法保存也無法上傳。') : null,
+    ),
+  );
+}
+
 // ---------- 設定頁 ----------
 
 export function renderSettings(panel) {
@@ -263,6 +341,7 @@ export function renderSettings(panel) {
       ),
       h('p', { class: 'small' }, meta.lastExportAt ? `上次在這個瀏覽器匯出備份：${formatTimestamp(meta.lastExportAt)}` : '你還沒有在這個瀏覽器匯出過備份。'),
     ),
+    renderStorageUsage(),
     card(
       'settings-export',
       '匯出完整備份（JSON）',

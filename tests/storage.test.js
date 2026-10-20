@@ -4,7 +4,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ALL_DAYS, createHabit } from '../js/habits.js';
 import { CURRENT_VERSION, emptyData } from '../js/schema.js';
-import { STORAGE_KEY, accountDataKey, loadData, preserveCorruptData, saveData, serializeData } from '../js/storage.js';
+import {
+  STORAGE_KEY,
+  STORAGE_LIMIT_CHARS,
+  accountDataKey,
+  loadData,
+  measureStorage,
+  preserveCorruptData,
+  saveData,
+  serializeData,
+} from '../js/storage.js';
 
 class MemoryStorage {
   constructor(entries = {}) {
@@ -24,6 +33,12 @@ class MemoryStorage {
   }
   removeItem(key) {
     this.map.delete(key);
+  }
+  get length() {
+    return this.map.size;
+  }
+  key(index) {
+    return [...this.map.keys()][index] ?? null;
   }
 }
 
@@ -127,4 +142,49 @@ test('帳號資料與本機資料分開存放', () => {
   assert.equal(loadData(storage, now).status, 'empty', '本機資料不受影響');
   assert.equal(loadData(storage, now, accountDataKey('user-a')).data.habits[0].name, '帳號A');
   assert.equal(loadData(storage, now, accountDataKey('user-b')).status, 'empty', '其他帳號看不到');
+});
+
+// ---------- 儲存空間用量 ----------
+
+test('儲存空間用量依位置分類並計算字元數', () => {
+  const current = accountDataKey('u1');
+  const storage = new MemoryStorage({
+    [current]: 'x'.repeat(100),
+    'daily-habit:u:u1:sync': 'y'.repeat(10),
+    [STORAGE_KEY]: 'z'.repeat(50),
+    'daily-habit:before-v1': 'a'.repeat(20),
+    'daily-habit:corrupt-2026': 'b'.repeat(5),
+    'daily-habit:meta': '{}',
+    'other-site': 'c'.repeat(7),
+  });
+  const before = new Map(storage.map);
+  const usage = measureStorage(storage, current);
+  assert.equal(usage.kinds.current, current.length + 100);
+  assert.equal(usage.kinds.account, 'daily-habit:u:u1:sync'.length + 10);
+  assert.equal(usage.kinds.local, STORAGE_KEY.length + 50);
+  assert.equal(usage.kinds.preserved, 'daily-habit:before-v1'.length + 20 + 'daily-habit:corrupt-2026'.length + 5);
+  assert.equal(usage.kinds.app, 'daily-habit:meta'.length + 2);
+  assert.equal(usage.kinds.other, 'other-site'.length + 7);
+  assert.equal(usage.used, Object.values(usage.kinds).reduce((a, b) => a + b, 0));
+  assert.equal(usage.limit, STORAGE_LIMIT_CHARS);
+  assert.equal(usage.level, 'ok');
+  assert.deepEqual(storage.map, before, '只讀取，不修改內容');
+});
+
+test('儲存空間超過 70% 提醒、超過 90% 警告', () => {
+  const at = (chars) => measureStorage(new MemoryStorage({ k: 'x'.repeat(chars - 1) }), STORAGE_KEY, 1000);
+  assert.equal(at(699).level, 'ok');
+  assert.equal(at(700).level, 'warn');
+  assert.equal(at(899).level, 'warn');
+  assert.equal(at(900).level, 'danger');
+  assert.equal(at(500).ratio, 0.5);
+});
+
+test('無法讀取儲存空間時回傳 null', () => {
+  assert.equal(measureStorage(null), null);
+  const broken = new MemoryStorage({ a: '1' });
+  broken.getItem = () => {
+    throw new Error('blocked');
+  };
+  assert.equal(measureStorage(broken), null);
 });
