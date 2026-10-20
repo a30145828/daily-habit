@@ -201,3 +201,9 @@
 
 - 七個階段都已完成並分別提交。
 - 需要你完成的外部設定：建立 Supabase 專案並在 `js/config.js` 填入公開設定（README「設定雲端同步」），以及合併 Pull Request 後啟用 GitHub Pages。在那之前網站以本機模式完整運作。
+
+## 部署後：啟用正式 Supabase
+
+- 已完成：`js/config.js` 填入正式專案的公開網址 `https://xczqtgqoqzzobtpxcrwg.supabase.co` 與 anon 金鑰（已解碼確認 `role` 為 `anon`、專案代號與網址一致）。沒有放入任何 secret／service_role 金鑰或資料庫密碼。
+- 已實測：`npm test` 119 項通過；`scripts/browser-check.cjs` 241 項通過（設定已填入、雲端連不到時，本機模式照常運作，設定頁顯示登入與註冊，狀態列顯示「本機模式」）。瀏覽器檢查改為依 `js/config.js` 是否已填入，分別檢查兩種情況。
+- 尚未驗證：連線到正式 Supabase 的註冊、登入、同步（這個開發環境的網路政策無法連到 supabase.co 與 github.io），需要合併後在 GitHub Pages 實際操作確認。
